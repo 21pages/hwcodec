@@ -1,7 +1,7 @@
-prefix=/home/sun/ffmpeg/FFmpeg/../install
+prefix=/home/sun/ffmepg/FFmpeg/../install
 exec_prefix=${prefix}
-libdir=/home/sun/ffmpeg/FFmpeg/../install/lib
-includedir=/home/sun/ffmpeg/FFmpeg/../install/include
+libdir=/home/sun/ffmepg/FFmpeg/../install/lib
+includedir=/home/sun/ffmepg/FFmpeg/../install/include
 
 Name: libavutil
 Description: FFmpeg utility library

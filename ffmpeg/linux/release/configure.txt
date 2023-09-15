@@ -25,9 +25,11 @@ CC=gcc ./configure  \
 --extra-cflags="-I/usr/local/include" \
 --enable-hwaccel=h264_vaapi --enable-hwaccel=hevc_vaapi \
 --enable-hwaccel=h264_vdpau --enable-hwaccel=hevc_vdpau \
+--enable-vaapi \
+--enable-encoder=h264_vaapi --enable-encoder=hevc_vaapi \
 --enable-muxer=mp4 \
 --enable-protocol=file
-install prefix            /home/sun/ffmpeg/FFmpeg/../install
+install prefix            /home/sun/ffmepg/FFmpeg/../install
 source path               .
 C compiler                gcc
 C library                 glibc
@@ -67,12 +69,12 @@ safe bitstream reader     yes
 texi2html enabled         no
 perl enabled              yes
 pod2man enabled           yes
-makeinfo enabled          no
-makeinfo supports HTML    no
+makeinfo enabled          yes
+makeinfo supports HTML    yes
 xmllint enabled           no
 
 External libraries:
-iconv                   libxcb                  libxcb_shape            libxcb_xfixes
+iconv                   libxcb                  libxcb_shape            libxcb_shm              libxcb_xfixes           zlib
 
 External libraries providing hardware acceleration:
 amf                     cuda_llvm               cuvid                   libnpp                  nvenc                   vdpau
@@ -87,7 +89,7 @@ Enabled decoders:
 h264                    h264_cuvid              hevc                    hevc_cuvid
 
 Enabled encoders:
-h264_amf                h264_nvenc              hevc_amf                hevc_nvenc
+h264_amf                h264_nvenc              h264_vaapi              hevc_amf                hevc_nvenc              hevc_vaapi
 
 Enabled hwaccels:
 h264_nvdec              h264_vaapi              h264_vdpau              hevc_nvdec              hevc_vaapi              hevc_vdpau
@@ -111,4 +113,5 @@ aac_adtstoasc           h264_mp4toannexb        hevc_mp4toannexb        vp9_supe
 Enabled indevs:
 
 Enabled outdevs:
+
 
