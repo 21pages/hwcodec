@@ -197,6 +197,13 @@ impl Encoder {
                 score: 70,
                 ..Default::default()
             },
+            CodecInfo {
+                name: "h264_vaapi".to_owned(),
+                format: H264,
+                vendor: OTHER,
+                score: 80,
+                ..Default::default()
+            },
             // 265
             CodecInfo {
                 name: "hevc_nvenc".to_owned(),
@@ -217,6 +224,13 @@ impl Encoder {
                 format: H265,
                 vendor: INTEL,
                 score: 60,
+                ..Default::default()
+            },
+            CodecInfo {
+                name: "hevc_vaapi".to_owned(),
+                format: H265,
+                vendor: OTHER,
+                score: 80,
                 ..Default::default()
             },
         ];
