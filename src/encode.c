@@ -269,7 +269,7 @@ Encoder *new_encoder(const char *name, int width, int height, int pixfmt,
   int ret;
 
   if (!(codec = avcodec_find_encoder_by_name(name))) {
-    fprintf(stderr, "Codec %s not found\n", codec);
+    fprintf(stderr, "Codec %s not found\n", name);
     goto _exit;
   }
 

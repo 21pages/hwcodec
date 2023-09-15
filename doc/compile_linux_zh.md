@@ -82,7 +82,7 @@ sudo apt-get update -qq && sudo apt-get -y install \
   libnuma-dev \
   libunistring-dev
 ```
-也许有多余， 但必须有`libva-dev`, `libvdpau-dev`
+也许有多余， 但必须有`libva-dev`, `libvdpau-dev, yasm`
 
 ## 三. 编译
 
