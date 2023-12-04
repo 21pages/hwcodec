@@ -325,6 +325,12 @@ Encoder *new_encoder(const char *name, int width, int height, int pixfmt,
   c->thread_count = thread_count;
   c->thread_type = FF_THREAD_SLICE;
 
+  // https://github.com/obsproject/obs-studio/blob/3cc7dc0e7cf8b01081dc23e432115f7efd0c8877/plugins/obs-ffmpeg/obs-ffmpeg-mux.c#L160
+  c->color_range = AVCOL_RANGE_MPEG;
+  c->colorspace = AVCOL_SPC_SMPTE170M;
+  c->color_primaries = AVCOL_PRI_SMPTE170M;
+  c->color_trc  = AVCOL_TRC_SMPTE170M;
+
   if (set_lantency_free(c->priv_data, name) < 0) {
     goto _exit;
   }
