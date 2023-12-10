@@ -1,6 +1,7 @@
 #ifndef FFI_H
 #define FFI_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define AV_NUM_DATA_POINTERS 8
@@ -18,6 +19,8 @@
 enum AVPixelFormat {
   AV_PIX_FMT_YUV420P = 0,
   AV_PIX_FMT_NV12 = 23,
+  AV_PIX_FMT_RGBA = 26,
+  AV_PIX_FMT_BGRA = 28,
 };
 
 enum Quality { Quality_Default, Quality_High, Quality_Medium, Quality_Low };
@@ -27,6 +30,15 @@ enum RateControl {
   RC_CBR,
   RC_VBR,
 };
+
+#define SWS_CS_ITU709 1
+#define SWS_CS_FCC 4
+#define SWS_CS_ITU601 5
+#define SWS_CS_ITU624 5
+#define SWS_CS_SMPTE170M 5
+#define SWS_CS_SMPTE240M 7
+#define SWS_CS_DEFAULT 5
+#define SWS_CS_BT2020 9
 
 typedef void (*DecodeCallback)(const void *obj, int width, int height,
                                int pixfmt, int linesize[AV_NUM_DATA_POINTERS],
@@ -58,5 +70,13 @@ int set_bitrate(void *encoder, int bitrate);
 int av_log_get_level(void);
 void av_log_set_level(int level);
 void get_bin_file(int is265, uint8_t **p, int *len);
+
+void *new_scaler(int srcW, int srcH, enum AVPixelFormat srcFormat,
+                 bool srcFullRange, int srcSpace, int dstW, int dstH,
+                 enum AVPixelFormat dstFormat, bool dstFullRange, int dstSpace);
+int scale(const void *const scaler, const uint8_t *const srcSlice[],
+          const int srcStride[], int srcSliceY, int srcSliceH,
+          uint8_t *const dst[], const int dstStride[]);
+void free_scaler(void *scaler);
 
 #endif // FFI_H
