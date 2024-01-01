@@ -1,9 +1,14 @@
 use cc::Build;
-use std::{env, path::Path};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 fn main() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let ffmpeg_dir = manifest_dir.parent().unwrap().join("ffmpeg");
     println!("cargo:rerun-if-changed=src");
-    println!("cargo:rerun-if-changed=ffmpeg");
+    println!("cargo:rerun-if-changed={}", ffmpeg_dir.display());
     let ffi_header = "src/ffi.h";
     bindgen::builder()
         .header(ffi_header)
@@ -17,7 +22,10 @@ fn main() {
 
     #[cfg(target_os = "windows")]
     {
-        println!("cargo:rustc-link-search=native=ffmpeg/windows/release/lib");
+        println!(
+            "cargo:rustc-link-search=native={}/windows/release/lib",
+            ffmpeg_dir.display()
+        );
         let static_libs = ["avcodec", "avfilter", "avutil", "avformat", "avdevice"];
         static_libs.map(|lib| println!("cargo:rustc-link-lib=static={}", lib));
         let dyn_libs = [
@@ -27,7 +35,7 @@ fn main() {
             // "Mfplat", "Mf", "mfuuid", "Strmiids",
         ];
         dyn_libs.map(|lib| println!("cargo:rustc-link-lib={}", lib));
-        builder.include("ffmpeg/windows/release/include");
+        builder.include(format!("{}/windows/release/include", ffmpeg_dir.display()));
     }
 
     #[cfg(target_os = "linux")]

@@ -1,0 +1,17 @@
+/target
+/Cargo.lock
+.vscode
+/ffmpeg/*
+!/ffmpeg/windows
+/ffmpeg/windows/debug
+!/ffmpeg/linux
+/ffmpeg/linux/debug
+!/ffmpeg/mac
+/ffmpeg/mac/debug
+!/ffmpeg/android
+/ffmpeg/android/debug
+!/ffmpeg/ios
+/ffmpeg/ios/debug
+/input
+/output
+Cargo.lock
