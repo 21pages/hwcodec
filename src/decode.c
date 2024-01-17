@@ -184,38 +184,36 @@ static int do_decode(Decoder *decoder, AVPacket *pkt, const void *obj) {
     return ret;
   }
 
-  while (ret >= 0) {
-    if ((ret = avcodec_receive_frame(decoder->c, decoder->frame)) != 0) {
-      if (ret != AVERROR(EAGAIN))
-        fprintf(stdout, "avcodec_receive_frame: %s\n", av_err2str(ret));
+  // while (ret >= 0) {
+  if ((ret = avcodec_receive_frame(decoder->c, decoder->frame)) != 0) {
+    fprintf(stdout, "avcodec_receive_frame: %s\n", av_err2str(ret));
+    goto _exit;
+  }
+
+  if (decoder->hwaccel) {
+    if (!decoder->frame->hw_frames_ctx) {
+      fprintf(stdout, "hw_frames_ctx is NULL\n");
+      goto _exit;
+    }
+    if ((ret = av_hwframe_transfer_data(decoder->sw_frame, decoder->frame, 0)) <
+        0) {
+      fprintf(stdout, "av_hwframe_transfer_data: %s\n", av_err2str(ret));
       goto _exit;
     }
 
-    if (decoder->hwaccel) {
-      if (!decoder->frame->hw_frames_ctx) {
-        fprintf(stdout, "hw_frames_ctx is NULL\n");
-        goto _exit;
-      }
-      if ((ret = av_hwframe_transfer_data(decoder->sw_frame, decoder->frame,
-                                          0)) < 0) {
-        fprintf(stdout, "av_hwframe_transfer_data: %s\n", av_err2str(ret));
-        goto _exit;
-      }
-
-      tmp_frame = decoder->sw_frame;
-    } else {
-      tmp_frame = decoder->frame;
-    }
-    decoded = true;
-#ifdef CFG_PKG_TRACE
-    decoder->out++;
-    fprintf(stdout, "delay DO: in:%d, out:%d\n", decoder->in, decoder->out);
-#endif
-    decoder->callback(obj, decoder->sw_parser_ctx->width,
-                      decoder->sw_parser_ctx->height, tmp_frame->format,
-                      tmp_frame->linesize, tmp_frame->data,
-                      tmp_frame->key_frame);
+    tmp_frame = decoder->sw_frame;
+  } else {
+    tmp_frame = decoder->frame;
   }
+  decoded = true;
+#ifdef CFG_PKG_TRACE
+  decoder->out++;
+  fprintf(stdout, "delay DO: in:%d, out:%d\n", decoder->in, decoder->out);
+#endif
+  decoder->callback(obj, decoder->sw_parser_ctx->width,
+                    decoder->sw_parser_ctx->height, tmp_frame->format,
+                    tmp_frame->linesize, tmp_frame->data, tmp_frame->key_frame);
+  // }
 _exit:
   av_packet_unref(decoder->pkt);
   return decoded ? 0 : -1;

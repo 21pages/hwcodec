@@ -423,21 +423,20 @@ static int do_encode(Encoder *encoder, AVFrame *frame, const void *obj,
     return ret;
   }
 
-  while (ret >= 0) {
-    if ((ret = avcodec_receive_packet(encoder->c, pkt)) < 0) {
-      if (ret != AVERROR(EAGAIN))
-        fprintf(stdout, "avcodec_receive_packet: %s\n", av_err2str(ret));
-      goto _exit;
-    }
-    encoded = true;
-#ifdef CFG_PKG_TRACE
-    encoder->out++;
-    fprintf(stdout, "delay EO: in:%d, out:%d\n", encoder->in, encoder->out);
-#endif
-    if (encoder->first_ms == 0) encoder->first_ms = ms;
-    encoder->callback(pkt->data, pkt->size, ms - encoder->first_ms,
-                      pkt->flags & AV_PKT_FLAG_KEY, obj);
+  // while (ret >= 0) {
+  if ((ret = avcodec_receive_packet(encoder->c, pkt)) < 0) {
+    fprintf(stdout, "avcodec_receive_packet: %s\n", av_err2str(ret));
+    goto _exit;
   }
+  encoded = true;
+#ifdef CFG_PKG_TRACE
+  encoder->out++;
+  fprintf(stdout, "delay EO: in:%d, out:%d\n", encoder->in, encoder->out);
+#endif
+  if (encoder->first_ms == 0) encoder->first_ms = ms;
+  encoder->callback(pkt->data, pkt->size, ms - encoder->first_ms,
+                    pkt->flags & AV_PKT_FLAG_KEY, obj);
+  // }
 _exit:
   av_packet_unref(pkt);
   return encoded ? 0 : -1;
