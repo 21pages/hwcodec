@@ -217,25 +217,25 @@ impl Decoder {
             ]);
         }
 
-        #[cfg(target_os = "linux")]
-        {
-            codecs.append(&mut vec![
-                CodecInfo {
-                    name: "h264".to_owned(),
-                    format: H264,
-                    vendor: OTHER,
-                    hwdevice: AV_HWDEVICE_TYPE_VAAPI,
-                    score: 70, // assume slow
-                },
-                CodecInfo {
-                    name: "hevc".to_owned(),
-                    format: H265,
-                    vendor: OTHER,
-                    hwdevice: AV_HWDEVICE_TYPE_VAAPI,
-                    score: 70,
-                },
-            ]);
-        }
+        // #[cfg(target_os = "linux")]
+        // {
+        //     codecs.append(&mut vec![
+        //         CodecInfo {
+        //             name: "h264".to_owned(),
+        //             format: H264,
+        //             vendor: OTHER,
+        //             hwdevice: AV_HWDEVICE_TYPE_VAAPI,
+        //             score: 70, // assume slow
+        //         },
+        //         CodecInfo {
+        //             name: "hevc".to_owned(),
+        //             format: H265,
+        //             vendor: OTHER,
+        //             hwdevice: AV_HWDEVICE_TYPE_VAAPI,
+        //             score: 70,
+        //         },
+        //     ]);
+        // }
 
         let infos = Arc::new(Mutex::new(Vec::<CodecInfo>::new()));
 
@@ -314,23 +314,23 @@ impl Decoder {
         #[cfg(target_os = "linux")]
         let mut res = infos.lock().unwrap().clone();
 
-        #[cfg(target_os = "linux")]
-        {
-            // VAAPI is slow on nvidia, but fast on amd
-            if res.iter().all(|c| c.hwdevice != AV_HWDEVICE_TYPE_CUDA) {
-                if std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg("lsmod | grep amdgpu >/dev/null 2>&1")
-                    .status()
-                    .map_or(false, |status| status.code() == Some(0))
-                {
-                    res.iter_mut()
-                        .filter(|c| c.hwdevice == AV_HWDEVICE_TYPE_VAAPI)
-                        .map(|c| c.score = 91)
-                        .count();
-                }
-            }
-        }
+        // #[cfg(target_os = "linux")]
+        // {
+        //     // VAAPI is slow on nvidia, but fast on amd
+        //     if res.iter().all(|c| c.hwdevice != AV_HWDEVICE_TYPE_CUDA) {
+        //         if std::process::Command::new("sh")
+        //             .arg("-c")
+        //             .arg("lsmod | grep amdgpu >/dev/null 2>&1")
+        //             .status()
+        //             .map_or(false, |status| status.code() == Some(0))
+        //         {
+        //             res.iter_mut()
+        //                 .filter(|c| c.hwdevice == AV_HWDEVICE_TYPE_VAAPI)
+        //                 .map(|c| c.score = 91)
+        //                 .count();
+        //         }
+        //     }
+        // }
 
         unsafe {
             av_log_set_level(log_level);
