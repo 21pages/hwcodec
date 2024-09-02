@@ -144,6 +144,7 @@ public:
         (AVHWDeviceContext *)hw_device_ctx_->data;
     AVD3D11VADeviceContext *d3d11vaDeviceContext =
         (AVD3D11VADeviceContext *)deviceContext->hwctx;
+    memset(d3d11vaDeviceContext, 0, sizeof(*d3d11vaDeviceContext));
     d3d11vaDeviceContext->device = d3d11Device_;
     d3d11vaDeviceContext->lock = lockContext;
     d3d11vaDeviceContext->unlock = unlockContext;
@@ -243,8 +244,6 @@ public:
       av_packet_free(&pkt_);
     if (frame_)
       av_frame_free(&frame_);
-    if (c_)
-      avcodec_free_context(&c_);
     if (hw_device_ctx_) {
       av_buffer_unref(&hw_device_ctx_);
       // AVHWDeviceContext takes ownership of d3d11 object
@@ -253,6 +252,8 @@ public:
       // SAFE_RELEASE(d3d11Device_);
       d3d11Device_ = nullptr;
     }
+    if (c_)
+      avcodec_free_context(&c_);
   }
 
   int set_bitrate(int kbs) {
@@ -496,8 +497,7 @@ int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
   try {
     AdapterDesc *descs = (AdapterDesc *)outDescs;
     int count = 0;
-    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL, ADAPTER_VENDOR_NVIDIA,
-                               ADAPTER_VENDOR_AMD};
+    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL};
     for (auto vendor : vendors) {
       Adapters adapters;
       if (!adapters.Init(vendor))

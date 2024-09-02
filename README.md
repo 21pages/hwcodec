@@ -24,6 +24,7 @@ Based on the information above, there are several optimizations and changes made
 
 * amd sdk remove h265 support, https://github.com/GPUOpen-LibrariesAndSDKs/AMF/issues/432
 
+
 ### Linux
 
 | GPU           | FFmpeg ram     |
