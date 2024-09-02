@@ -215,3 +215,33 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
     let mut x = outputs.lock().unwrap().clone();
     x.drain(..).map(|e| e.f).collect()
 }
+
+pub fn test_qsv(d: DynamicContext) {
+    let test = ffmpeg::encode_calls().test;
+    let mut descs: Vec<AdapterDesc> = vec![];
+    descs.resize(crate::vram::MAX_ADATERS, unsafe { std::mem::zeroed() });
+    let mut desc_count: i32 = 0;
+    let input = EncodeContext {
+        f: FeatureContext {
+            driver: FFMPEG,
+            api: crate::common::API::API_DX11,
+            data_format: crate::common::DataFormat::H265,
+            luid: 0,
+        },
+        d,
+    };
+    unsafe {
+        test(
+            descs.as_mut_ptr() as _,
+            descs.len() as _,
+            &mut desc_count,
+            input.f.api as _,
+            input.f.data_format as i32,
+            input.d.width,
+            input.d.height,
+            input.d.kbitrate,
+            input.d.framerate,
+            input.d.gop,
+        );
+    }
+}

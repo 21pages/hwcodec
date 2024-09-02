@@ -60,12 +60,10 @@ public:
   AVCodecContext *c_ = NULL;
   AVBufferRef *hw_device_ctx_ = NULL;
   AVFrame *frame_ = NULL;
-  AVFrame *mapped_frame_ = NULL;
-  ID3D11Texture2D *encode_texture_ = NULL; // no free
+  ComPtr<ID3D11Texture2D> encode_texture_ = NULL; // no free
   AVPacket *pkt_ = NULL;
   std::unique_ptr<NativeDevice> native_ = nullptr;
   ID3D11Device *d3d11Device_ = NULL;
-  ID3D11DeviceContext *d3d11DeviceContext_ = NULL;
   std::unique_ptr<Encoder> encoder_ = nullptr;
 
   void *handle_ = nullptr;
@@ -108,9 +106,7 @@ public:
       return false;
     }
     d3d11Device_ = native_->device_.Get();
-    d3d11Device_->AddRef();
-    d3d11DeviceContext_ = native_->context_.Get();
-    d3d11DeviceContext_->AddRef();
+    // d3d11Device_->AddRef();
 
     AdapterVendor vendor = native_->GetVendor();
     if (!choose_encoder(vendor)) {
@@ -149,10 +145,9 @@ public:
     AVD3D11VADeviceContext *d3d11vaDeviceContext =
         (AVD3D11VADeviceContext *)deviceContext->hwctx;
     d3d11vaDeviceContext->device = d3d11Device_;
-    d3d11vaDeviceContext->device_context = d3d11DeviceContext_;
     d3d11vaDeviceContext->lock = lockContext;
     d3d11vaDeviceContext->unlock = unlockContext;
-    d3d11vaDeviceContext->lock_ctx = this;
+    d3d11vaDeviceContext->lock_ctx = (void *)1;
     ret = av_hwdevice_ctx_init(hw_device_ctx_);
     if (ret < 0) {
       LOG_ERROR("av_hwdevice_ctx_init failed, ret = " + av_err2str(ret));
@@ -171,6 +166,7 @@ public:
       hw_device_ctx_ = derived_context;
     }
     c_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
+    av_buffer_unref(&hw_device_ctx_);
     if (!set_hwframe_ctx()) {
       return false;
     }
@@ -199,24 +195,30 @@ public:
     frame_->colorspace = c_->colorspace;
     frame_->chroma_location = c_->chroma_sample_location;
 
-    if ((ret = av_hwframe_get_buffer(c_->hw_frames_ctx, frame_, 0)) < 0) {
-      LOG_ERROR("av_frame_get_buffer failed, ret = " + av_err2str(ret));
-      return false;
+    if (!frame_->buf[0]) {
+      if ((ret = av_hwframe_get_buffer(c_->hw_frames_ctx, frame_, 0)) < 0) {
+        LOG_ERROR("av_frame_get_buffer failed, ret = " + av_err2str(ret));
+        return false;
+      }
+    } else {
+      LOG_ERROR("============== frame buffer already allocated");
     }
     if (frame_->format == AV_PIX_FMT_QSV) {
-      mapped_frame_ = av_frame_alloc();
-      if (!mapped_frame_) {
+      AVFrame *mapped_frame = av_frame_alloc();
+      if (!mapped_frame) {
         LOG_ERROR("Could not allocate mapped video frame");
         return false;
       }
-      mapped_frame_->format = AV_PIX_FMT_D3D11;
-      ret = av_hwframe_map(mapped_frame_, frame_,
+      mapped_frame->format = AV_PIX_FMT_D3D11;
+      ret = av_hwframe_map(mapped_frame, frame_,
                            AV_HWFRAME_MAP_WRITE | AV_HWFRAME_MAP_OVERWRITE);
       if (ret) {
         LOG_ERROR("av_hwframe_map failed, err = " + av_err2str(ret));
+        av_frame_free(&mapped_frame);
         return false;
       }
-      encode_texture_ = (ID3D11Texture2D *)mapped_frame_->data[0];
+      encode_texture_ = (ID3D11Texture2D *)mapped_frame->data[0];
+      av_frame_free(&mapped_frame);
     } else {
       encode_texture_ = (ID3D11Texture2D *)frame_->data[0];
     }
@@ -233,22 +235,23 @@ public:
   }
 
   void destroy() {
+    if (native_) {
+      native_.reset();
+      native_ = nullptr;
+    }
     if (pkt_)
       av_packet_free(&pkt_);
     if (frame_)
       av_frame_free(&frame_);
-    if (mapped_frame_)
-      av_frame_free(&mapped_frame_);
     if (c_)
       avcodec_free_context(&c_);
     if (hw_device_ctx_) {
       av_buffer_unref(&hw_device_ctx_);
       // AVHWDeviceContext takes ownership of d3d11 object
       d3d11Device_ = nullptr;
-      d3d11DeviceContext_ = nullptr;
     } else {
-      SAFE_RELEASE(d3d11Device_);
-      SAFE_RELEASE(d3d11DeviceContext_);
+      // SAFE_RELEASE(d3d11Device_);
+      d3d11Device_ = nullptr;
     }
   }
 
@@ -338,7 +341,7 @@ private:
   bool convert(void *texture) {
     if (frame_->format == AV_PIX_FMT_D3D11 ||
         frame_->format == AV_PIX_FMT_QSV) {
-      ID3D11Texture2D *texture2D = (ID3D11Texture2D *)encode_texture_;
+      ID3D11Texture2D *texture2D = encode_texture_.Get();
       D3D11_TEXTURE2D_DESC desc;
       texture2D->GetDesc(&desc);
       if (desc.Format != DXGI_FORMAT_NV12) {
@@ -382,7 +385,7 @@ private:
     int err = 0;
     bool ret = true;
 
-    if (!(hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx_))) {
+    if (!(hw_frames_ref = av_hwframe_ctx_alloc(c_->hw_device_ctx))) {
       LOG_ERROR("av_hwframe_ctx_alloc failed.");
       return false;
     }
