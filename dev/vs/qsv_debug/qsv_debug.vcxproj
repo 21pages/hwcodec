@@ -71,8 +71,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>..\..\..\deps\ffmpeg\windows-x86_64\include;..\..\..\cpp\common\platform\win;..\..\..\cpp\common;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\..\deps\ffmpeg\windows-x86_64\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\codecs\ff\qsv_ff7_debug\include;..\..\..\cpp\common\platform\win;..\..\..\cpp\common;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\codecs\ff\qsv_ff7_debug\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -108,11 +108,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libavcodec.a;libavutil.a;libavformat.a;mfx.lib;User32.lib;bcrypt.lib;ole32.lib;advapi32.lib;dxgi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libavcodec.a;libavutil.a;libavformat.a;libvpl.lib;User32.lib;bcrypt.lib;ole32.lib;advapi32.lib;dxgi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

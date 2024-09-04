@@ -504,15 +504,15 @@ int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
             api, dataFormat, width, height, kbs, framerate, gop);
         if (!e)
           continue;
-        //if (e->native_->EnsureTexture(e->width_, e->height_)) {
-        //  e->native_->next();
-        //  if (ffmpeg_vram_encode(e, e->native_->GetCurrentTexture(), nullptr,
-        //                         nullptr, 0) == 0) {
-        //    AdapterDesc *desc = descs + count;
-        //    desc->luid = LUID(adapter.get()->desc1_);
-        //    count += 1;
-        //  }
-        //}
+        if (e->native_->EnsureTexture(e->width_, e->height_)) {
+         e->native_->next();
+         if (ffmpeg_vram_encode(e, e->native_->GetCurrentTexture(), nullptr,
+                                nullptr, 0) == 0) {
+           AdapterDesc *desc = descs + count;
+           desc->luid = LUID(adapter.get()->desc1_);
+           count += 1;
+         }
+        }
         e->destroy();
         delete e;
         e = nullptr;
