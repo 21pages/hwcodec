@@ -493,8 +493,7 @@ int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
   try {
     AdapterDesc *descs = (AdapterDesc *)outDescs;
     int count = 0;
-    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL, ADAPTER_VENDOR_NVIDIA,
-                               ADAPTER_VENDOR_AMD};
+    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL};
     for (auto vendor : vendors) {
       Adapters adapters;
       if (!adapters.Init(vendor))
@@ -505,15 +504,15 @@ int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
             api, dataFormat, width, height, kbs, framerate, gop);
         if (!e)
           continue;
-        if (e->native_->EnsureTexture(e->width_, e->height_)) {
-          e->native_->next();
-          if (ffmpeg_vram_encode(e, e->native_->GetCurrentTexture(), nullptr,
-                                 nullptr, 0) == 0) {
-            AdapterDesc *desc = descs + count;
-            desc->luid = LUID(adapter.get()->desc1_);
-            count += 1;
-          }
-        }
+        //if (e->native_->EnsureTexture(e->width_, e->height_)) {
+        //  e->native_->next();
+        //  if (ffmpeg_vram_encode(e, e->native_->GetCurrentTexture(), nullptr,
+        //                         nullptr, 0) == 0) {
+        //    AdapterDesc *desc = descs + count;
+        //    desc->luid = LUID(adapter.get()->desc1_);
+        //    count += 1;
+        //  }
+        //}
         e->destroy();
         delete e;
         e = nullptr;
