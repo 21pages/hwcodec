@@ -1,6 +1,6 @@
 use crate::{
     common::{AdapterDesc, DataFormat::*, Driver::*},
-    vram::{amf, ffmpeg, inner::DecodeCalls, mfx, nv, DecodeContext},
+    vram::{amf, ffmpeg, inner::DecodeCalls, nv, DecodeContext},
 };
 use log::{error, trace};
 use std::{
@@ -24,7 +24,7 @@ impl Decoder {
         let calls = match ctx.driver {
             NV => nv::decode_calls(),
             AMF => amf::decode_calls(),
-            MFX => mfx::decode_calls(),
+            // MFX => mfx::decode_calls(),
             FFMPEG => ffmpeg::decode_calls(),
         };
         unsafe {
@@ -110,12 +110,12 @@ pub fn available() -> Vec<DecodeContext> {
             .map(|n| (AMF, n))
             .collect(),
     );
-    codecs.append(
-        &mut mfx::possible_support_decoders()
-            .drain(..)
-            .map(|n| (MFX, n))
-            .collect(),
-    );
+    // codecs.append(
+    //     &mut mfx::possible_support_decoders()
+    //         .drain(..)
+    //         .map(|n| (MFX, n))
+    //         .collect(),
+    // );
     let inputs = codecs.drain(..).map(|(driver, n)| DecodeContext {
         device: None,
         driver,
@@ -141,7 +141,7 @@ pub fn available() -> Vec<DecodeContext> {
             let test = match input.driver {
                 NV => nv::decode_calls().test,
                 AMF => amf::decode_calls().test,
-                MFX => mfx::decode_calls().test,
+                // MFX => mfx::decode_calls().test,
                 FFMPEG => ffmpeg::decode_calls().test,
             };
             let mut descs: Vec<AdapterDesc> = vec![];

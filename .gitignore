@@ -22,3 +22,12 @@ dev/vs/ShaderCompileTool/x64
 bmp
 texture
 .DS_Store
+*.obj
+*.tlog
+*.ilk
+*.recipe
+*.exe
+*.pdb
+*.idb
+*.log
+dev/vs/qsv_debug/qsv_debug/

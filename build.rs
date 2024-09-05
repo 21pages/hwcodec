@@ -148,15 +148,12 @@ mod ffmpeg {
 
         println!(
             "{}",
-            format!(
-                "cargo:rustc-link-search=native={}",
-                path.join("lib").to_str().unwrap()
-            )
+            format!("cargo:rustc-link-search=native=D:/codecs/ff/qsv_ff7_debug/lib")
         );
         {
             let mut static_libs = vec!["avcodec", "avutil", "avformat"];
             if target_os == "windows" {
-                static_libs.push("libmfx");
+                static_libs.push("libvpl");
             }
             static_libs
                 .iter()
@@ -165,8 +162,11 @@ mod ffmpeg {
         }
 
         let include = path.join("include");
-        println!("{}", format!("cargo:include={}", include.to_str().unwrap()));
-        builder.include(&include);
+        println!(
+            "{}",
+            format!("cargo:include=D:/codecs/ff/qsv_ff7_debug/include",)
+        );
+        builder.include("D:/codecs/ff/qsv_ff7_debug/include");
         include
     }
 
@@ -282,7 +282,7 @@ mod sdk {
     pub(crate) fn build_sdk(builder: &mut Build) {
         build_amf(builder);
         build_nv(builder);
-        build_mfx(builder);
+        // build_mfx(builder);
     }
 
     fn build_nv(builder: &mut Build) {

@@ -12,7 +12,7 @@ pub(crate) const DATA_H265_720P: &[u8] = include_bytes!("res/720p.h265");
 pub enum Driver {
     NV,
     AMF,
-    MFX,
+    // MFX,
     FFMPEG,
 }
 
@@ -36,7 +36,8 @@ pub(crate) fn supported_gpu(_encode: bool) -> (bool, bool, bool) {
                 _encode && crate::vram::nv::nv_encode_driver_support() == 0
                     || !_encode && crate::vram::nv::nv_decode_driver_support() == 0,
                 crate::vram::amf::amf_driver_support() == 0,
-                crate::vram::mfx::mfx_driver_support() == 0,
+                // crate::vram::mfx::mfx_driver_support() == 0,
+                true,
             );
             #[cfg(not(feature = "vram"))]
             return (true, true, true);

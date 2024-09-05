@@ -213,24 +213,24 @@ impl Encoder {
             };
             let (_nv, amf, _intel) = crate::common::supported_gpu(true);
 
-            #[cfg(windows)]
-            if _intel && contains(Driver::MFX, H264) {
-                codecs.push(CodecInfo {
-                    name: "h264_qsv".to_owned(),
-                    format: H264,
-                    priority: Priority::Best as _,
-                    ..Default::default()
-                });
-            }
-            #[cfg(windows)]
-            if _intel && contains(Driver::MFX, H265) {
-                codecs.push(CodecInfo {
-                    name: "hevc_qsv".to_owned(),
-                    format: H265,
-                    priority: Priority::Best as _,
-                    ..Default::default()
-                });
-            }
+            // #[cfg(windows)]
+            // if _intel && contains(Driver::MFX, H264) {
+            //     codecs.push(CodecInfo {
+            //         name: "h264_qsv".to_owned(),
+            //         format: H264,
+            //         priority: Priority::Best as _,
+            //         ..Default::default()
+            //     });
+            // }
+            // #[cfg(windows)]
+            // if _intel && contains(Driver::MFX, H265) {
+            //     codecs.push(CodecInfo {
+            //         name: "hevc_qsv".to_owned(),
+            //         format: H265,
+            //         priority: Priority::Best as _,
+            //         ..Default::default()
+            //     });
+            // }
             if _nv && contains(Driver::NV, H264) {
                 codecs.push(CodecInfo {
                     name: "h264_nvenc".to_owned(),

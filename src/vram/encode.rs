@@ -1,8 +1,6 @@
 use crate::{
     common::{AdapterDesc, Driver::*},
-    vram::{
-        amf, ffmpeg, inner::EncodeCalls, mfx, nv, DynamicContext, EncodeContext, FeatureContext,
-    },
+    vram::{amf, ffmpeg, inner::EncodeCalls, nv, DynamicContext, EncodeContext, FeatureContext},
 };
 use log::trace;
 use std::{
@@ -31,7 +29,7 @@ impl Encoder {
         let calls = match ctx.f.driver {
             NV => nv::encode_calls(),
             AMF => amf::encode_calls(),
-            MFX => mfx::encode_calls(),
+            // MFX => mfx::encode_calls(),
             FFMPEG => ffmpeg::encode_calls(),
         };
         unsafe {
@@ -149,12 +147,12 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
             .map(|n| (AMF, n))
             .collect(),
     );
-    natives.append(
-        &mut mfx::possible_support_encoders()
-            .drain(..)
-            .map(|n| (MFX, n))
-            .collect(),
-    );
+    // natives.append(
+    //     &mut mfx::possible_support_encoders()
+    //         .drain(..)
+    //         .map(|n| (MFX, n))
+    //         .collect(),
+    // );
     let inputs = natives.drain(..).map(|(driver, n)| EncodeContext {
         f: FeatureContext {
             driver,
@@ -178,7 +176,7 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
             let test = match input.f.driver {
                 NV => nv::encode_calls().test,
                 AMF => amf::encode_calls().test,
-                MFX => mfx::encode_calls().test,
+                // MFX => mfx::encode_calls().test,
                 FFMPEG => ffmpeg::encode_calls().test,
             };
             let mut descs: Vec<AdapterDesc> = vec![];
