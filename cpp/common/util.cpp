@@ -15,7 +15,7 @@ extern "C" {
 #define LOG_MODULE "UTIL"
 #include "log.h"
 
-namespace util {
+namespace util_encode {
 
 void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
                       int gop, int fps) {
@@ -272,6 +272,12 @@ bool force_hw(void *priv_data, const std::string &name) {
 
 bool set_others(void *priv_data, const std::string &name) {
   int ret;
+  if (name.find("qsv") != std::string::npos) {
+    if ((ret = av_opt_set_int(priv_data, "forced_idr", 1, 0)) < 0) {
+      LOG_ERROR("nvenc set forced_idr failed, ret = " + av_err2str(ret));
+      return false;
+    }
+  }
   if (name.find("_mf") != std::string::npos) {
     // ff_eAVScenarioInfo_DisplayRemoting = 1
     if ((ret = av_opt_set_int(priv_data, "scenario", 1, 0)) < 0) {
@@ -299,4 +305,32 @@ bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs) {
   }
   return true;
 }
+
+void request_idr(AVFrame *f, bool force_idr) {
+  if (force_idr) {
+    f->pict_type = AV_PICTURE_TYPE_I;
+    f->flags |= AV_FRAME_FLAG_KEY;
+  } else {
+    f->pict_type = AV_PICTURE_TYPE_NONE;
+    f->flags &= ~AV_FRAME_FLAG_KEY;
+  }
+}
+
+
+
 } // namespace util
+
+
+namespace util_decode {
+  static bool g_flag_could_not_find_ref_with_poc = false;
+
+  bool has_flag_could_not_find_ref_with_poc() {
+  bool v = g_flag_could_not_find_ref_with_poc;
+  g_flag_could_not_find_ref_with_poc = false;
+  return v;
+}
+}
+
+extern "C" void hwcodec_set_flag_could_not_find_ref_with_poc() {
+  util_decode::g_flag_could_not_find_ref_with_poc = true;
+}

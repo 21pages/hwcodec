@@ -19,6 +19,7 @@ extern "C" {
 
 #define LOG_MODULE "FFMPEG_VRAM_DEC"
 #include <log.h>
+#include <uitl.h>
 
 namespace {
 
@@ -346,11 +347,16 @@ extern "C" int ffmpeg_vram_decode(FFmpegVRamDecoder *decoder,
                                   const uint8_t *data, int length,
                                   DecodeCallback callback, const void *obj) {
   try {
-    return decoder->decode(data, length, callback, obj);
+    int ret = decoder->decode(data, length, callback, obj);
+    if (DataFormat::H265 == decoder->dataFormat_ && util_decode::has_flag_could_not_find_ref_with_poc()) {
+      return HWCODEC_ERR_HEVC_COULD_NOT_FIND_POC;
+    } else {
+      return ret == 0 ? HWCODEC_SUCCESS : HWCODEC_ERR_COMMON;
+    }
   } catch (const std::exception &e) {
     LOG_ERROR("ffmpeg_ram_decode exception:" + e.what());
   }
-  return -1;
+  return HWCODEC_ERR_COMMON;
 }
 
 extern "C" int ffmpeg_vram_test_decode(AdapterDesc *outDescs,

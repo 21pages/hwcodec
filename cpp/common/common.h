@@ -43,4 +43,10 @@ enum RateControl {
   RC_CQ,
 };
 
+enum HwcodecErrno {
+  HWCODEC_SUCCESS = 0,
+  HWCODEC_ERR_COMMON = -1,
+  HWCODEC_ERR_HEVC_COULD_NOT_FIND_POC = -2,
+};
+
 #endif // COMMON_H

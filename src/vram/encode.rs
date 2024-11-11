@@ -1,5 +1,6 @@
 use crate::{
     common::{AdapterDesc, Driver::*},
+    ffmpeg::init_av_log,
     vram::{
         amf, ffmpeg, inner::EncodeCalls, mfx, nv, DynamicContext, EncodeContext, FeatureContext,
     },
@@ -25,6 +26,7 @@ unsafe impl Sync for Encoder {}
 
 impl Encoder {
     pub fn new(ctx: EncodeContext) -> Result<Self, ()> {
+        init_av_log();
         if ctx.d.width % 2 == 1 || ctx.d.height % 2 == 1 {
             return Err(());
         }
