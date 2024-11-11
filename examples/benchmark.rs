@@ -20,7 +20,7 @@ fn main() {
         mc_name: None,
         width: 1920,
         height: 1080,
-        pixfmt: AVPixelFormat::AV_PIX_FMT_YUV420P,
+        pixfmt: AVPixelFormat::AV_PIX_FMT_NV12,
         align: 0,
         kbs: 5000,
         fps: 30,
@@ -30,12 +30,12 @@ fn main() {
         thread_count: 4,
         q: -1,
     };
-    let yuv_count = 100;
+    let yuv_count = 10;
     println!("benchmark");
     let yuvs = prepare_yuv(ctx.width as _, ctx.height as _, yuv_count);
 
-    println!("encoders:");
     let encoders = Encoder::available_encoders(ctx.clone(), None);
+    log::info!("encoders: {:?}", encoders);
     let best = CodecInfo::prioritized(encoders.clone());
     for info in encoders {
         test_encoder(info.clone(), ctx.clone(), &yuvs, is_best(&best, &info));
@@ -43,8 +43,8 @@ fn main() {
 
     let (h264s, h265s) = prepare_h26x(best, ctx.clone(), &yuvs);
 
-    println!("decoders:");
     let decoders = Decoder::available_decoders(None);
+    log::info!("decoders: {:?}", decoders);
     let best = CodecInfo::prioritized(decoders.clone());
     for info in decoders {
         let h26xs = if info.name.contains("h264") {

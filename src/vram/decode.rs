@@ -1,5 +1,6 @@
 use crate::{
     common::{AdapterDesc, DataFormat::*, Driver::*},
+    ffmpeg::init_av_log,
     vram::{amf, ffmpeg, inner::DecodeCalls, mfx, nv, DecodeContext},
 };
 use log::{error, trace};
@@ -29,6 +30,7 @@ extern "C" {
 
 impl Decoder {
     pub fn new(ctx: DecodeContext) -> Result<Self, ()> {
+        init_av_log();
         let calls = match ctx.driver {
             NV => nv::decode_calls(),
             AMF => amf::decode_calls(),

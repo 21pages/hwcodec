@@ -7,7 +7,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
-namespace util {
+namespace util_encode {
 
 void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
                       int gop, int fps);
@@ -21,6 +21,11 @@ bool set_others(void *priv_data, const std::string &name);
 
 bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs);
 
+void request_idr(AVFrame *f, bool force_idr);
 } // namespace util
+
+namespace util_decode {
+    bool has_flag_could_not_find_ref_with_poc();
+}
 
 #endif

@@ -386,11 +386,13 @@ int amf_decode(void *decoder, uint8_t *data, int32_t length,
                DecodeCallback callback, void *obj) {
   try {
     AMFDecoder *dec = (AMFDecoder *)decoder;
-    return -dec->decode(data, length, callback, obj);
+    if (dec->decode(data, length, callback, obj) == AMF_OK) {
+      return HWCODEC_SUCCESS;
+    }
   } catch (const std::exception &e) {
     LOG_ERROR("decode failed: " + e.what());
   }
-  return -1;
+  return HWCODEC_ERR_COMMON;
 }
 
 int amf_test_decode(AdapterDesc *outDescs, int32_t maxDescNum,

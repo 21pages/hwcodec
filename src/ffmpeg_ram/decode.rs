@@ -2,14 +2,11 @@
 use super::Priority;
 #[cfg(target_os = "linux")]
 use crate::common::{DataFormat, Driver};
-use crate::ffmpeg::AVHWDeviceType::*;
+use crate::ffmpeg::{init_av_log, AVHWDeviceType::*};
 
 use crate::{
     common::DataFormat::*,
-    ffmpeg::{
-        av_log_get_level, av_log_set_level, AVHWDeviceType, AVPixelFormat, AV_LOG_ERROR,
-        AV_LOG_PANIC,
-    },
+    ffmpeg::{AVHWDeviceType, AVPixelFormat},
     ffmpeg_ram::{
         ffmpeg_ram_decode, ffmpeg_ram_free_decoder, ffmpeg_ram_new_decoder, CodecInfo,
         AV_NUM_DATA_POINTERS,
@@ -72,6 +69,7 @@ unsafe impl Sync for Decoder {}
 
 impl Decoder {
     pub fn new(ctx: DecodeContext) -> Result<Self, ()> {
+        init_av_log();
         unsafe {
             let codec = ffmpeg_ram_new_decoder(
                 CString::new(ctx.name.as_str()).map_err(|_| ())?.as_ptr(),
@@ -82,11 +80,6 @@ impl Decoder {
 
             if codec.is_null() {
                 return Err(());
-            }
-
-            // ffmpeg amd encoder doesn't handle colorspace, this can disable warning
-            if ctx.device_type == AV_HWDEVICE_TYPE_VIDEOTOOLBOX {
-                av_log_set_level(AV_LOG_ERROR as _);
             }
 
             Ok(Decoder {
@@ -108,9 +101,6 @@ impl Decoder {
             );
 
             if ret < 0 {
-                if av_log_get_level() >= AV_LOG_ERROR as _ {
-                    error!("Error decode: {}", ret);
-                }
                 Err(ret)
             } else {
                 Ok(&mut *self.frames)
@@ -185,11 +175,6 @@ impl Decoder {
     }
 
     fn available_decoders_(_sdk: Option<String>) -> Vec<CodecInfo> {
-        let log_level;
-        unsafe {
-            log_level = av_log_get_level();
-            av_log_set_level(AV_LOG_PANIC as _);
-        };
         #[allow(unused_mut)]
         let mut codecs: Vec<CodecInfo> = vec![];
         // windows disable nvdec to avoid gpu stuck
@@ -360,9 +345,6 @@ impl Decoder {
         }
         if let Some(c) = soft.h265 {
             res.push(c);
-        }
-        unsafe {
-            av_log_set_level(log_level);
         }
 
         res

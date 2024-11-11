@@ -643,11 +643,13 @@ int nv_decode(void *decoder, uint8_t *data, int len, DecodeCallback callback,
               void *obj) {
   try {
     CuvidDecoder *p = (CuvidDecoder *)decoder;
-    return p->decode(data, len, callback, obj);
+    if (p->decode(data, len, callback, obj) == 0 ) {
+      return HWCODEC_SUCCESS;
+    }
   } catch (const std::exception &e) {
     LOG_ERROR("decode failed" + e.what());
   }
-  return -1;
+  return HWCODEC_ERR_COMMON;
 }
 
 int nv_test_decode(AdapterDesc *outDescs, int32_t maxDescNum,
