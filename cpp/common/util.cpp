@@ -15,7 +15,7 @@ extern "C" {
 #define LOG_MODULE "UTIL"
 #include "log.h"
 
-namespace util {
+namespace util_encode {
 
 void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
                       int gop, int fps) {
@@ -299,4 +299,21 @@ bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs) {
   }
   return true;
 }
-} // namespace util
+
+} // namespace util_encode
+
+namespace util_decode {
+
+static bool g_flag_could_not_find_ref_with_poc = false;
+
+bool has_flag_could_not_find_ref_with_poc() {
+  bool v = g_flag_could_not_find_ref_with_poc;
+  g_flag_could_not_find_ref_with_poc = false;
+  return v;
+}
+
+} // namespace util_decode
+
+extern "C" void hwcodec_set_flag_could_not_find_ref_with_poc() {
+  util_decode::g_flag_could_not_find_ref_with_poc = true;
+}

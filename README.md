@@ -57,7 +57,7 @@ Based on the information above, there are several optimizations and changes made
 
 * intel
 
-  Windows Intel(r) graphics driver since 27.20.100.8935 version. 
+  Windows Intel(r) graphics driver since 27.20.100.8935 version.
 
   [Hardware Platforms Supported by the Intel(R) Media SDK GPU Runtime](https://www.intel.com/content/www/us/en/docs/onevpl/upgrade-from-msdk/2023-1/onevpl-hardware-support-details.html#HARDWARE-PLATFORMS-SUPPORTED-BY-THE-INTEL-R-MEDIA-SDK-GPU-RUNTIME)
 
@@ -77,3 +77,15 @@ Based on the information above, there are several optimizations and changes made
 
   https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new?ncid=em-prod-816193
 
+## vcpkg install ffmpeg
+
+* Windows
+```
+./vcpkg install ffmpeg[core,avcodec,avformat,nvcodec,amf,qsv]:x64-windows-static
+```
+
+* Mac
+```
+./vcpkg install ffmpeg[core,avcodec,avformat]:x64-osx
+./vcpkg install ffmpeg[core,avcodec,avformat]:arm64-osx
+```

@@ -143,7 +143,11 @@ mod ffmpeg {
             target = target.replace("x64", "x86");
         }
         println!("cargo:info={}", target);
-        path.push("installed");
+        if let Ok(vcpkg_root) = std::env::var("VCPKG_INSTALLED_ROOT") {
+            path = vcpkg_root.into();
+        } else {
+            path.push("installed");
+        }
         path.push(target);
 
         println!(
@@ -193,12 +197,22 @@ mod ffmpeg {
             .map(|lib| println!("cargo:rustc-link-lib={}", lib))
             .count();
 
+        // error LNK2001: unresolved external symbol IID_ICodecAPI
+        // error LNK2001: unresolved external symbol IID_IMFMediaEventGenerator
+        // error LNK2001: unresolved external symbol IID_IMFTransform
+        #[cfg(target_os = "windows")]
+        [
+            "Mfuuid", "Strmiids"
+        ]
+        .map(|lib| println!("cargo:rustc-link-lib={}", lib));
+
         if target_os == "macos" || target_os == "ios" {
             println!("cargo:rustc-link-lib=framework=CoreFoundation");
             println!("cargo:rustc-link-lib=framework=CoreVideo");
             println!("cargo:rustc-link-lib=framework=CoreMedia");
             println!("cargo:rustc-link-lib=framework=VideoToolbox");
             println!("cargo:rustc-link-lib=framework=AVFoundation");
+            println!("cargo:rustc-link-lib=framework=AudioToolbox");
         }
     }
 

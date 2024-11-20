@@ -3,13 +3,13 @@ use crate::{
         DataFormat::{self, *},
         Quality, RateControl,
     },
-    ffmpeg::{av_log_get_level, av_log_set_level, AVPixelFormat, AV_LOG_ERROR, AV_LOG_PANIC},
+    ffmpeg::{init_av_log, AVPixelFormat},
     ffmpeg_ram::{
         ffmpeg_linesize_offset_length, ffmpeg_ram_encode, ffmpeg_ram_free_encoder,
         ffmpeg_ram_new_encoder, ffmpeg_ram_set_bitrate, CodecInfo, AV_NUM_DATA_POINTERS,
     },
 };
-use log::{error, trace};
+use log::trace;
 use std::{
     ffi::{c_void, CString},
     fmt::Display,
@@ -64,6 +64,7 @@ pub struct Encoder {
 
 impl Encoder {
     pub fn new(ctx: EncodeContext) -> Result<Self, ()> {
+        init_av_log();
         if ctx.width % 2 == 1 || ctx.height % 2 == 1 {
             return Err(());
         }
@@ -126,9 +127,6 @@ impl Encoder {
                 ms,
             );
             if result != 0 {
-                if av_log_get_level() >= AV_LOG_ERROR as _ {
-                    error!("Error encode: {}", result);
-                }
                 return Err(result);
             }
             Ok(&mut *self.frames)
@@ -187,12 +185,6 @@ impl Encoder {
         if !(cfg!(windows) || cfg!(target_os = "linux") || cfg!(target_os = "macos")) {
             return vec![];
         }
-
-        let log_level;
-        unsafe {
-            log_level = av_log_get_level();
-            av_log_set_level(AV_LOG_PANIC as _);
-        };
         let mut codecs: Vec<CodecInfo> = vec![];
         #[cfg(any(windows, target_os = "linux"))]
         {
@@ -316,10 +308,8 @@ impl Encoder {
         let infos = Arc::new(Mutex::new(Vec::<CodecInfo>::new()));
         let mut res = vec![];
 
-        let start = Instant::now();
         let mutex = Arc::new(Mutex::new(0));
         if let Ok(yuv) = Encoder::dummy_yuv(ctx.clone()) {
-            log::debug!("prepare yuv {:?}", start.elapsed());
             let yuv = Arc::new(yuv);
             let mut handles = vec![];
             for codec in codecs {
@@ -336,18 +326,10 @@ impl Encoder {
                         mc_name: codec.mc_name.clone(),
                         ..ctx
                     };
-                    let start = Instant::now();
                     if let Ok(mut encoder) = Encoder::new(c) {
-                        log::debug!("{} new {:?}", codec.name, start.elapsed());
-                        let start = Instant::now();
                         if let Ok(_) = encoder.encode(&yuv, 0) {
-                            log::debug!("{} encode {:?}", codec.name, start.elapsed());
                             infos.lock().unwrap().push(codec);
-                        } else {
-                            log::debug!("{} encode failed {:?}", codec.name, start.elapsed());
                         }
-                    } else {
-                        log::debug!("{} new failed {:?}", codec.name, start.elapsed());
                     }
                 });
                 handles.push(handle);
@@ -356,10 +338,6 @@ impl Encoder {
                 handle.join().ok();
             }
             res = infos.lock().unwrap().clone();
-        }
-
-        unsafe {
-            av_log_set_level(log_level);
         }
 
         res

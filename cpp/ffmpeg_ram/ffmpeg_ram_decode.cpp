@@ -13,6 +13,7 @@ extern "C" {
 
 #define LOG_MODULE "FFMPEG_RAM_DEC"
 #include <log.h>
+#include <uitl.h>
 
 #ifdef _WIN32
 #include <libavutil/hwcontext_d3d11va.h>
@@ -312,9 +313,14 @@ ffmpeg_ram_new_decoder(const char *name, int device_type, int thread_count,
 extern "C" int ffmpeg_ram_decode(FFmpegRamDecoder *decoder, const uint8_t *data,
                                  int length, const void *obj) {
   try {
-    return decoder->decode(data, length, obj);
+    int ret = decoder->decode(data, length, obj);
+    if (DataFormat::H265 == decoder->data_format_ && util_decode::has_flag_could_not_find_ref_with_poc()) {
+      return HWCODEC_ERR_HEVC_COULD_NOT_FIND_POC;
+    } else {
+      return ret == 0 ? HWCODEC_SUCCESS : HWCODEC_ERR_COMMON;
+    }
   } catch (const std::exception &e) {
     LOG_ERROR("ffmpeg_ram_decode exception:" + e.what());
   }
-  return -1;
+  return HWCODEC_ERR_COMMON;
 }

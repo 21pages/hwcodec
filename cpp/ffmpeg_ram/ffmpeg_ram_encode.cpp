@@ -228,16 +228,16 @@ public:
     c_->pix_fmt =
         hw_pixfmt_ != AV_PIX_FMT_NONE ? hw_pixfmt_ : (AVPixelFormat)pixfmt_;
     c_->sw_pix_fmt = (AVPixelFormat)pixfmt_;
-    util::set_av_codec_ctx(c_, name_, kbs_, gop_, fps_);
-    if (!util::set_lantency_free(c_->priv_data, name_)) {
+    util_encode::set_av_codec_ctx(c_, name_, kbs_, gop_, fps_);
+    if (!util_encode::set_lantency_free(c_->priv_data, name_)) {
       LOG_ERROR("set_lantency_free failed, name: " + name_);
       return false;
     }
-    // util::set_quality(c_->priv_data, name_, quality_);
-    util::set_rate_control(c_, name_, rc_, q_);
-    util::set_gpu(c_->priv_data, name_, gpu_);
-    util::force_hw(c_->priv_data, name_);
-    util::set_others(c_->priv_data, name_);
+    // util_encode::set_quality(c_->priv_data, name_, quality_);
+    util_encode::set_rate_control(c_, name_, rc_, q_);
+    util_encode::set_gpu(c_->priv_data, name_, gpu_);
+    util_encode::force_hw(c_->priv_data, name_);
+    util_encode::set_others(c_->priv_data, name_);
     if (name_.find("mediacodec") != std::string::npos) {
       if (mc_name_.length() > 0) {
         LOG_INFO("mediacodec codec_name: " + mc_name_);
@@ -302,7 +302,7 @@ public:
   }
 
   int set_bitrate(int kbs) {
-    return util::change_bit_rate(c_, name_, kbs) ? 0 : -1;
+    return util_encode::change_bit_rate(c_, name_, kbs) ? 0 : -1;
   }
 
 private:
@@ -348,6 +348,10 @@ private:
         if (ret != AVERROR(EAGAIN)) {
           LOG_ERROR("avcodec_receive_packet failed, ret = " + av_err2str(ret));
         }
+        goto _exit;
+      }
+      if (!pkt_->data || !pkt_->size) {
+        LOG_ERROR("avcodec_receive_packet failed, pkt size is 0");
         goto _exit;
       }
       encoded = true;
