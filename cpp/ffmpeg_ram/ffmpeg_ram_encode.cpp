@@ -120,6 +120,8 @@ public:
   AVBufferRef *hw_device_ctx_ = NULL;
   AVFrame *hw_frame_ = NULL;
 
+  bool force_idr_ = false;
+
   FFmpegRamEncoder(const char *name, const char *mc_name, int width, int height,
                    int pixfmt, int align, int fps, int gop, int rc, int quality,
                    int kbs, int q, int thread_count, int gpu,
@@ -338,6 +340,12 @@ private:
     int ret;
     bool encoded = false;
     frame->pts = ms;
+    if (force_idr_) {
+      util_encode::request_idr(frame, true);
+    } else {
+      util_encode::request_idr(frame, false);
+    }
+
     if ((ret = avcodec_send_frame(c_, frame)) < 0) {
       LOG_ERROR("avcodec_send_frame failed, ret = " + av_err2str(ret));
       return ret;
@@ -355,6 +363,7 @@ private:
         goto _exit;
       }
       encoded = true;
+      force_idr_ = false;
       callback_(pkt_->data, pkt_->size, pkt_->pts,
                 pkt_->flags & AV_PKT_FLAG_KEY, obj);
     }

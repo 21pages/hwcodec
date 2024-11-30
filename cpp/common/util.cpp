@@ -300,6 +300,16 @@ bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs) {
   return true;
 }
 
+void request_idr(AVFrame *f, bool force_idr) {
+  if (force_idr) {
+    f->pict_type = AV_PICTURE_TYPE_I;
+    f->flags |= AV_FRAME_FLAG_KEY;
+  } else {
+    f->pict_type = AV_PICTURE_TYPE_NONE;
+    f->flags &= ~AV_FRAME_FLAG_KEY;
+  }
+}
+
 } // namespace util_encode
 
 namespace util_decode {

@@ -20,6 +20,7 @@ bool force_hw(void *priv_data, const std::string &name);
 bool set_others(void *priv_data, const std::string &name);
 
 bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs);
+void request_idr(AVFrame *f, bool force_idr);
 
 } // namespace util
 

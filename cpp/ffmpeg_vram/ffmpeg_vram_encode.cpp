@@ -81,6 +81,8 @@ public:
   const int align_ = 0;
   const bool full_range_ = false;
   const bool bt709_ = false;
+
+  bool force_idr_ = false;
   FFmpegVRamEncoder(void *handle, int64_t luid, API api, DataFormat dataFormat,
                     int32_t width, int32_t height, int32_t kbs,
                     int32_t framerate, int32_t gop) {
@@ -317,6 +319,12 @@ private:
     int ret;
     bool encoded = false;
     frame_->pts = ms;
+    if (force_idr_) {
+      util_encode::request_idr(frame_, true);
+    } else {
+      util_encode::request_idr(frame_, false);
+    }
+
     if ((ret = avcodec_send_frame(c_, frame_)) < 0) {
       LOG_ERROR("avcodec_send_frame failed, ret = " + av_err2str(ret));
       return ret;
@@ -334,6 +342,7 @@ private:
         goto _exit;
       }
       encoded = true;
+      force_idr_ = false;
       if (callback)
         callback(pkt_->data, pkt_->size, pkt_->flags & AV_PKT_FLAG_KEY, obj,
                  pkt_->pts);
