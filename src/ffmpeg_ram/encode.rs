@@ -223,22 +223,23 @@ impl Encoder {
                     ..Default::default()
                 });
             }
-            if _nv && contains(Driver::NV, H264) {
-                codecs.push(CodecInfo {
-                    name: "h264_nvenc".to_owned(),
-                    format: H264,
-                    priority: Priority::Best as _,
-                    ..Default::default()
-                });
-            }
-            if _nv && contains(Driver::NV, H265) {
-                codecs.push(CodecInfo {
-                    name: "hevc_nvenc".to_owned(),
-                    format: H265,
-                    priority: Priority::Best as _,
-                    ..Default::default()
-                });
-            }
+            // if _nv && contains(Driver::NV, H264) {
+            //     codecs.push(CodecInfo {
+            //         name: "h264_nvenc".to_owned(),
+            //         format: H264,
+            //         priority: Priority::Best as _,
+            //         ..Default::default()
+            //     });
+            // }
+            // if _nv && contains(Driver::NV, H265) {
+            //     codecs.push(CodecInfo {
+            //         name: "hevc_nvenc".to_owned(),
+            //         format: H265,
+            //         priority: Priority::Best as _,
+            //         ..Default::default()
+            //     })
+            //     ;
+            // }
             if amf && contains(Driver::AMF, H264) {
                 codecs.push(CodecInfo {
                     name: "h264_amf".to_owned(),
