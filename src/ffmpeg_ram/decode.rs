@@ -196,24 +196,24 @@ impl Decoder {
                 }
                 true
             };
-            if nv && contains(Driver::NV, H264) {
-                codecs.push(CodecInfo {
-                    name: "h264".to_owned(),
-                    format: H264,
-                    hwdevice: AV_HWDEVICE_TYPE_CUDA,
-                    priority: Priority::Good as _,
-                    ..Default::default()
-                });
-            }
-            if nv && contains(Driver::NV, H265) {
-                codecs.push(CodecInfo {
-                    name: "hevc".to_owned(),
-                    format: H265,
-                    hwdevice: AV_HWDEVICE_TYPE_CUDA,
-                    priority: Priority::Good as _,
-                    ..Default::default()
-                });
-            }
+            // if nv && contains(Driver::NV, H264) {
+            //     codecs.push(CodecInfo {
+            //         name: "h264".to_owned(),
+            //         format: H264,
+            //         hwdevice: AV_HWDEVICE_TYPE_CUDA,
+            //         priority: Priority::Good as _,
+            //         ..Default::default()
+            //     });
+            // }
+            // if nv && contains(Driver::NV, H265) {
+            //     codecs.push(CodecInfo {
+            //         name: "hevc".to_owned(),
+            //         format: H265,
+            //         hwdevice: AV_HWDEVICE_TYPE_CUDA,
+            //         priority: Priority::Good as _,
+            //         ..Default::default()
+            //     });
+            // }
         }
 
         #[cfg(target_os = "windows")]
