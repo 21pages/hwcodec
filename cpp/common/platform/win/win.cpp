@@ -471,8 +471,10 @@ bool NativeDevice::Process(ID3D11Texture2D *in, ID3D11Texture2D *out, int width,
   ZeroMemory(&StreamData, sizeof(StreamData));
   StreamData.Enable = TRUE;
   StreamData.pInputSurface = inputView.Get();
+  LOG_INFO("Process, before VideoProcessorBlt");
   HRB(video_context_->VideoProcessorBlt(video_processor_.Get(),
                                         outputView.Get(), 0, 1, &StreamData));
+  LOG_INFO("Process, after VideoProcessorBlt");
 
   return true;
 }

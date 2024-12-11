@@ -317,13 +317,18 @@ private:
     int ret;
     bool encoded = false;
     frame_->pts = ms;
+    LOG_INFO("do_encode, before avcodec_send_frame, ms = " + std::to_string(ms));
     if ((ret = avcodec_send_frame(c_, frame_)) < 0) {
       LOG_ERROR("avcodec_send_frame failed, ret = " + av_err2str(ret));
       return ret;
     }
+    LOG_INFO("do_encode, after avcodec_send_frame, ret = " + std::to_string(ret));
 
     while (ret >= 0) {
-      if ((ret = avcodec_receive_packet(c_, pkt_)) < 0) {
+      LOG_INFO("do_encode, before avcodec_receive_packet");
+      ret = avcodec_receive_packet(c_, pkt_);
+      LOG_INFO("do_encode, after avcodec_receive_packet, ret = " + std::to_string(ret));
+      if (ret < 0) {
         if (ret != AVERROR(EAGAIN)) {
           LOG_ERROR("avcodec_receive_packet failed, ret = " + av_err2str(ret));
         }
@@ -334,12 +339,16 @@ private:
         goto _exit;
       }
       encoded = true;
+      LOG_INFO("do_encode, before callback, pkt_->size = " + std::to_string(pkt_->size));
       if (callback)
         callback(pkt_->data, pkt_->size, pkt_->flags & AV_PKT_FLAG_KEY, obj,
                  pkt_->pts);
+      LOG_INFO("do_encode, after callback");
     }
   _exit:
+    LOG_INFO("do_encode, before av_packet_unref");
     av_packet_unref(pkt_);
+    LOG_INFO("do_encode, after av_packet_unref");
     return encoded ? 0 : -1;
   }
 
@@ -371,11 +380,13 @@ private:
           colorSpace_out = DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601;
         }
       }
+      LOG_INFO("convert: BgraToNv12");
       if (!native_->BgraToNv12((ID3D11Texture2D *)texture, texture2D, width_,
                                height_, colorSpace_in, colorSpace_out)) {
         LOG_ERROR("convert: BgraToNv12 failed");
         return false;
       }
+      LOG_INFO("convert: BgraToNv12 success");
       return true;
     } else {
       LOG_ERROR("convert: unsupported format, " +
