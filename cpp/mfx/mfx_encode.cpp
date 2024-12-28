@@ -48,19 +48,6 @@ mfxStatus InitSession(MFXVideoSession &session) {
   return session.InitEx(mfxparams);
 }
 
-// https://github.com/GStreamer/gstreamer/blob/e19428a802c2f4ee9773818aeb0833f93509a1c0/subprojects/gst-plugins-bad/sys/qsv/gstqsvh264enc.cpp#L1353
-void set_bitrate(mfxVideoParam *param, int bitrate) {
-  int multiplier;
-  switch (param->mfx.RateControlMethod) {
-  case MFX_RATECONTROL_CBR:
-    multiplier = (bitrate + 0x10000) / 0x10000;
-    param->mfx.TargetKbps = param->mfx.MaxKbps = bitrate / multiplier;
-    param->mfx.BRCParamMultiplier = (mfxU16)multiplier;
-    break;
-  default:
-    break;
-  }
-}
 
 class VplEncoder {
 public:
@@ -71,7 +58,10 @@ public:
   std::vector<mfxU8> bstData_;
   mfxBitstream mfxBS_;
   mfxVideoParam mfxEncParams_;
-  mfxExtBuffer *extbuffers_[1] = {NULL};
+  mfxExtBuffer *extbuffers_[4] = {NULL, NULL, NULL, NULL};
+  mfxExtCodingOption coding_option_;
+  mfxExtCodingOption2 coding_option2_;
+  mfxExtCodingOption3 coding_option3_;
   mfxExtVideoSignalInfo signal_info_;
   ComPtr<ID3D11Texture2D> nv12Texture_ = nullptr;
 
@@ -299,13 +289,37 @@ private:
   mfxStatus resetEnc() {
     mfxStatus sts = MFX_ERR_NONE;
     memset(&mfxEncParams_, 0, sizeof(mfxEncParams_));
+
+    // General
+    mfxEncParams_.AsyncDepth = 1; // 1 is best for low latency
+    mfxEncParams_.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY;
+    mfxEncParams_.mfx.CodecProfile = 0;
+    mfxEncParams_.mfx.CodecLevel = 0;
+
+    // Basic
     if (!convert_codec(dataFormat_, mfxEncParams_.mfx.CodecId)) {
       LOG_ERROR("unsupported dataFormat: " + std::to_string(dataFormat_));
       return MFX_ERR_UNSUPPORTED;
     }
+    mfxEncParams_.mfx.LowPower = MFX_CODINGOPTION_ON;
+    mfxEncParams_.mfx.BRCParamMultiplier = 0;
 
+    // Frame Info
+      // Width must be a multiple of 16
+      // Height must be a multiple of 16 in case of frame picture and a multiple
+      // of 32 in case of field picture
+    mfxEncParams_.mfx.FrameInfo.Width = MSDK_ALIGN16(width_);
+    mfxEncParams_.mfx.FrameInfo.Height =
+        (MFX_PICSTRUCT_PROGRESSIVE == mfxEncParams_.mfx.FrameInfo.PicStruct)
+            ? MSDK_ALIGN16(height_)
+            : MSDK_ALIGN32(height_);
+    mfxEncParams_.mfx.FrameInfo.CropX = 0;
+    mfxEncParams_.mfx.FrameInfo.CropY = 0;
+    mfxEncParams_.mfx.FrameInfo.CropW = width_;
+    mfxEncParams_.mfx.FrameInfo.CropH = height_;
     mfxEncParams_.mfx.FrameInfo.FrameRateExtN = framerate_;
     mfxEncParams_.mfx.FrameInfo.FrameRateExtD = 1;
+    mfxEncParams_.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_PROGRESSIVE;
 #ifdef CONFIG_USE_VPP
     mfxEncParams_.mfx.FrameInfo.FourCC = MFX_FOURCC_NV12;
     mfxEncParams_.mfx.FrameInfo.ChromaFormat = MFX_CHROMAFORMAT_YUV420;
@@ -316,43 +330,26 @@ private:
     mfxEncParams_.mfx.FrameInfo.FourCC = MFX_FOURCC_BGR4;
     mfxEncParams_.mfx.FrameInfo.ChromaFormat = MFX_CHROMAFORMAT_YUV444;
 #endif
-    mfxEncParams_.mfx.FrameInfo.BitDepthLuma = 8;
-    mfxEncParams_.mfx.FrameInfo.BitDepthChroma = 8;
+    mfxEncParams_.mfx.FrameInfo.BitDepthLuma = 0;
+    mfxEncParams_.mfx.FrameInfo.BitDepthChroma = 0;
     mfxEncParams_.mfx.FrameInfo.Shift = 0;
-    mfxEncParams_.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_PROGRESSIVE;
-    mfxEncParams_.mfx.FrameInfo.CropX = 0;
-    mfxEncParams_.mfx.FrameInfo.CropY = 0;
-    mfxEncParams_.mfx.FrameInfo.CropW = width_;
-    mfxEncParams_.mfx.FrameInfo.CropH = height_;
-    // Width must be a multiple of 16
-    // Height must be a multiple of 16 in case of frame picture and a multiple
-    // of 32 in case of field picture
-    mfxEncParams_.mfx.FrameInfo.Width = MSDK_ALIGN16(width_);
-    mfxEncParams_.mfx.FrameInfo.Height =
-        (MFX_PICSTRUCT_PROGRESSIVE == mfxEncParams_.mfx.FrameInfo.PicStruct)
-            ? MSDK_ALIGN16(height_)
-            : MSDK_ALIGN32(height_);
+    
+    // Encoding Options
+    mfxEncParams_.mfx.TargetUsage = MFX_TARGETUSAGE_BEST_SPEED;
     mfxEncParams_.mfx.EncodedOrder = 0;
-
-    mfxEncParams_.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY;
-
-    // Configuration for low latency
-    mfxEncParams_.AsyncDepth = 1; // 1 is best for low latency
-    mfxEncParams_.mfx.GopRefDist =
-        1; // 1 is best for low latency, I and P frames only
     mfxEncParams_.mfx.GopPicSize = (gop_ > 0 && gop_ < 0xFFFF) ? gop_ : 0xFFFF;
-    // quality
+    mfxEncParams_.mfx.GopRefDist = 1; // 1 is best for low latency, I and P frames only
+    mfxEncParams_.mfx.GopOptFlag = 0;
+    mfxEncParams_.mfx.IdrInterval = 0;
     // https://www.intel.com/content/www/us/en/developer/articles/technical/common-bitrate-control-methods-in-intel-media-sdk.html
-    mfxEncParams_.mfx.TargetUsage = MFX_TARGETUSAGE_BALANCED;
-    mfxEncParams_.mfx.RateControlMethod = MFX_RATECONTROL_CBR;
-    set_bitrate(&mfxEncParams_, kbs_);
-    if (H264 == dataFormat_) {
-      mfxEncParams_.mfx.CodecLevel = MFX_LEVEL_AVC_51;
-      mfxEncParams_.mfx.CodecProfile = MFX_PROFILE_AVC_MAIN;
-    } else if (H265 == dataFormat_) {
-      mfxEncParams_.mfx.CodecLevel = MFX_LEVEL_HEVC_51;
-      mfxEncParams_.mfx.CodecProfile = MFX_PROFILE_HEVC_MAIN;
-    }
+    mfxEncParams_.mfx.RateControlMethod = MFX_RATECONTROL_VBR;
+    mfxEncParams_.mfx.InitialDelayInKB = 0;
+    mfxEncParams_.mfx.BufferSizeInKB = 512;
+    mfxEncParams_.mfx.TargetKbps = kbs_;
+    mfxEncParams_.mfx.MaxKbps = kbs_;
+    mfxEncParams_.mfx.NumSlice = 1;
+    mfxEncParams_.mfx.NumRefFrame = 0;
+    mfxEncParams_.mfx.EncodedOrder = 0;
 
     resetEncExtParams();
 
@@ -519,6 +516,27 @@ private:
   }
 
   void resetEncExtParams() {
+    // coding option
+    memset(&coding_option_, 0, sizeof(mfxExtCodingOption));
+    coding_option_.Header.BufferId = MFX_EXTBUFF_CODING_OPTION;
+    coding_option_.Header.BufferSz = sizeof(mfxExtCodingOption);
+    coding_option_.NalHrdConformance = MFX_CODINGOPTION_OFF;
+    extbuffers_[0] = (mfxExtBuffer *)&coding_option_;
+
+    // coding option2
+    memset(&coding_option2_, 0, sizeof(mfxExtCodingOption2));
+    coding_option2_.Header.BufferId = MFX_EXTBUFF_CODING_OPTION2;
+    coding_option2_.Header.BufferSz = sizeof(mfxExtCodingOption2);
+    coding_option2_.RepeatPPS = MFX_CODINGOPTION_OFF;
+    extbuffers_[1] = (mfxExtBuffer *)&coding_option2_;
+
+    // coding option3
+    memset(&coding_option3_, 0, sizeof(mfxExtCodingOption3));
+    coding_option3_.Header.BufferId = MFX_EXTBUFF_CODING_OPTION3;
+    coding_option3_.Header.BufferSz = sizeof(mfxExtCodingOption3);
+    extbuffers_[2] = (mfxExtBuffer *)&coding_option3_;
+    
+    // signal info
     memset(&signal_info_, 0, sizeof(mfxExtVideoSignalInfo));
     signal_info_.Header.BufferId = MFX_EXTBUFF_VIDEO_SIGNAL_INFO;
     signal_info_.Header.BufferSz = sizeof(mfxExtVideoSignalInfo);
@@ -531,11 +549,11 @@ private:
         bt709_ ? AVCOL_PRI_BT709 : AVCOL_PRI_SMPTE170M;
     signal_info_.TransferCharacteristics =
         bt709_ ? AVCOL_TRC_BT709 : AVCOL_TRC_SMPTE170M;
-
     // https://github.com/GStreamer/gstreamer/blob/651dcb49123ec516e7c582e4a49a5f3f15c10f93/subprojects/gst-plugins-bad/sys/qsv/gstqsvh264enc.cpp#L1647
-    extbuffers_[0] = (mfxExtBuffer *)&signal_info_;
+    extbuffers_[3] = (mfxExtBuffer *)&signal_info_;
+
     mfxEncParams_.ExtParam = extbuffers_;
-    mfxEncParams_.NumExtParam = 1;
+    mfxEncParams_.NumExtParam = 4;
   }
 
   bool convert_codec(DataFormat dataFormat, mfxU32 &CodecId) {
@@ -661,7 +679,12 @@ int mfx_set_bitrate(void *encoder, int32_t kbs) {
     mfxStatus sts = MFX_ERR_NONE;
     // https://github.com/GStreamer/gstreamer/blob/e19428a802c2f4ee9773818aeb0833f93509a1c0/subprojects/gst-plugins-bad/sys/qsv/gstqsvencoder.cpp#L1312
     p->kbs_ = kbs;
-    sts = p->Reset();
+    p->mfxENC_->GetVideoParam(&p->mfxEncParams_);
+    p->mfxEncParams_.mfx.TargetKbps = kbs;
+    p->mfxEncParams_.mfx.MaxKbps = kbs;
+    p->mfxEncParams_.mfx.InitialDelayInKB = 256;
+    p->mfxEncParams_.mfx.NumRefFrame = 1;
+    sts = p->mfxENC_->Reset(&p->mfxEncParams_);
     if (sts != MFX_ERR_NONE) {
       LOG_ERROR("reset failed, sts=" + std::to_string(sts));
       return -1;
