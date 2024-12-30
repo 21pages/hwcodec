@@ -17,8 +17,7 @@ extern "C" {
 
 namespace util_encode {
 
-void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
-                      int gop, int fps) {
+void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int gop, int fps) {
   c->has_b_frames = 0;
   c->max_b_frames = 0;
   if (gop > 0 && gop < std::numeric_limits<int16_t>::max()) {
@@ -27,19 +26,12 @@ void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
     c->gop_size = std::numeric_limits<int16_t>::max();
   } else if (name.find("qsv") != std::string::npos) {
     c->gop_size = std::numeric_limits<uint16_t>::max();
+  } else if (name.find("nvenc") != std::string::npos)  {
+    c->gop_size = 0xffffffff; // NVENC_INFINITE_GOPLENGTH
   } else {
     c->gop_size = std::numeric_limits<int>::max();
   }
   c->keyint_min = std::numeric_limits<int>::max();
-  /* put sample parameters */
-  // https://github.com/FFmpeg/FFmpeg/blob/415f012359364a77e8394436f222b74a8641a3ee/libavcodec/encode.c#L581
-  if (kbs > 0) {
-    c->bit_rate = kbs * 1000;
-    if (name.find("qsv") != std::string::npos) {
-      c->rc_max_rate = c->bit_rate;
-      c->bit_rate--; // cbr with vbr
-    }
-  }
   /* frames per second */
   c->time_base = av_make_q(1, 1000);
   c->framerate = av_make_q(fps, 1);
@@ -102,146 +94,40 @@ bool set_lantency_free(void *priv_data, const std::string &name) {
   return true;
 }
 
-bool set_quality(void *priv_data, const std::string &name, int quality) {
-  int ret = -1;
+bool set_rate_control(AVCodecContext *c, const std::string &name, int kbs) {
+  change_bit_rate(c, name, kbs);
 
-  if (name.find("nvenc") != std::string::npos) {
-    switch (quality) {
-    // p7 isn't zero lantency
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "preset", "p4", 0)) < 0) {
-        LOG_ERROR("nvenc set opt preset p4 failed, ret = " + av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "preset", "p1", 0)) < 0) {
-        LOG_ERROR("nvenc set opt preset p1 failed, ret = " + av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("amf") != std::string::npos) {
-    switch (quality) {
-    case Quality_High:
-      if ((ret = av_opt_set(priv_data, "quality", "quality", 0)) < 0) {
-        LOG_ERROR("amf set opt quality quality failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "quality", "balanced", 0)) < 0) {
-        LOG_ERROR("amf set opt quality balanced failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "quality", "speed", 0)) < 0) {
-        LOG_ERROR("amf set opt quality speed failed, ret = " + av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("qsv") != std::string::npos) {
-    switch (quality) {
-    case Quality_High:
-      if ((ret = av_opt_set(priv_data, "preset", "veryslow", 0)) < 0) {
-        LOG_ERROR("qsv set opt preset veryslow failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "preset", "medium", 0)) < 0) {
-        LOG_ERROR("qsv set opt preset medium failed, ret = " + av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "preset", "veryfast", 0)) < 0) {
-        LOG_ERROR("qsv set opt preset veryfast failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("mediacodec") != std::string::npos) {
-    if (name.find("h264") != std::string::npos) {
-      if ((ret = av_opt_set(priv_data, "level", "5.1", 0)) < 0) {
-        LOG_ERROR("mediacodec set opt level 5.1 failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-    }
-    if (name.find("hevc") != std::string::npos) {
-      // https:en.wikipedia.org/wiki/High_Efficiency_Video_Coding_tiers_and_levels
-      if ((ret = av_opt_set(priv_data, "level", "h5.1", 0)) < 0) {
-        LOG_ERROR("mediacodec set opt level h5.1 failed, ret = " +
-                  av_err2str(ret));
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-struct CodecOptions {
-  std::string codec_name;
-  std::string option_name;
-  std::map<int, std::string> rc_values;
-};
-
-bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
-                      int q) {
   if (name.find("qsv") != std::string::npos) {
     // https://github.com/LizardByte/Sunshine/blob/3e47cd3cc8fd37a7a88be82444ff4f3c0022856b/src/video.cpp#L1635
     c->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
-  }
-  std::vector<CodecOptions> codecs = {
-      {"nvenc", "rc", {{RC_CBR, "cbr"}, {RC_VBR, "vbr"}}},
-      {"amf", "rc", {{RC_CBR, "cbr"}, {RC_VBR, "vbr_latency"}}},
-      {"mediacodec",
-       "bitrate_mode",
-       {{RC_CBR, "cbr"}, {RC_VBR, "vbr"}, {RC_CQ, "cq"}}},
-      // {"videotoolbox", "constant_bit_rate", {{RC_CBR, "1"}}},
-    };
-
-  for (const auto &codec : codecs) {
-    if (name.find(codec.codec_name) != std::string::npos) {
-      auto it = codec.rc_values.find(rc);
-      if (it != codec.rc_values.end()) {
-        int ret = av_opt_set(c->priv_data, codec.option_name.c_str(),
-                             it->second.c_str(), 0);
-        if (ret < 0) {
-          LOG_ERROR(codec.codec_name + " set opt " + codec.option_name + " " +
-                    it->second + " failed, ret = " + av_err2str(ret));
-          return false;
-        }
-        if (name.find("mediacodec") != std::string::npos) {
-          if (rc == RC_CQ) {
-            if (q >= 0 && q <= 51) {
-              c->global_quality = q;
-            }
-          }
-        }
-      }
-      break;
+  } else if (name.find("nvenc") != std::string::npos) {
+    int ret = av_opt_set(c->priv_data, "rc", "vbr", 0);
+    if (ret < 0) {
+      LOG_ERROR("nvenc set opt rc failed, ret = " + av_err2str(ret));
+      return false;
     }
-  }
-
-  return true;
+    if (name.find("h264") != std::string::npos) {
+      c->qmin = 31;
+      c->qmax = 38;
+    } else if (name.find("hevc") != std::string::npos) {
+      c->qmin = 24;
+      c->qmax = 38;
+    }
+  } else if (name.find("amf") != std::string::npos) {
+    int ret = av_opt_set(c->priv_data, "rc", "cbr", 0);
+    if (ret < 0) {
+      LOG_ERROR("amf set opt rc failed, ret = " + av_err2str(ret));
+      return false;
+    }
+  } else if (name.find("mediacodec") != std::string::npos) {
+    int ret = av_opt_set(c->priv_data, "bitrate_mode", "vbr", 0);
+    if (ret < 0) {
+      LOG_ERROR("mediacodec set opt bitrate_mode failed, ret = " + av_err2str(ret));
+      return false;
+     }
+   }
 }
+
 bool set_gpu(void *priv_data, const std::string &name, int gpu) {
   int ret;
   if (gpu < 0)
@@ -295,11 +181,19 @@ bool set_others(void *priv_data, const std::string &name) {
 }
 
 bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs) {
-  if (kbs > 0) {
-    c->bit_rate = kbs * 1000;
-    if (name.find("qsv") != std::string::npos) {
-      c->rc_max_rate = c->bit_rate;
-    }
+  /* put sample parameters */
+  // https://github.com/FFmpeg/FFmpeg/blob/415f012359364a77e8394436f222b74a8641a3ee/libavcodec/encode.c#L581
+  if (kbs <= 0) {
+    kbs = 1000;
+  }
+  c->bit_rate = kbs * 1000;
+  if (name.find("qsv") != std::string::npos) {
+    c->rc_max_rate = c->bit_rate;
+    c->bit_rate--; // cbr with vbr
+  }
+  if (name.find("nvenc") != std::string::npos) {
+    c->rc_max_rate = c->bit_rate;
+    c->rc_buffer_size = c->bit_rate;
   }
   return true;
 }

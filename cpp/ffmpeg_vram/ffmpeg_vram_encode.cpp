@@ -131,12 +131,12 @@ public:
     c_->height = height_;
     c_->pix_fmt = encoder_->hw_pixfmt_;
     c_->sw_pix_fmt = encoder_->sw_pixfmt_;
-    util_encode::set_av_codec_ctx(c_, encoder_->name_, kbs_, gop_, framerate_);
+    util_encode::set_av_codec_ctx(c_, encoder_->name_, gop_, framerate_);
     if (!util_encode::set_lantency_free(c_->priv_data, encoder_->name_)) {
       return false;
     }
     // util_encode::set_quality(c_->priv_data, encoder_->name_, Quality_Default);
-    util_encode::set_rate_control(c_, encoder_->name_, RC_CBR, -1);
+    util_encode::set_rate_control(c_, encoder_->name_, kbs_);
     util_encode::set_others(c_->priv_data, encoder_->name_);
 
     hw_device_ctx_ = av_hwdevice_ctx_alloc(encoder_->device_type_);

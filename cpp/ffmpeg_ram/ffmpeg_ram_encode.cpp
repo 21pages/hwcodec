@@ -230,13 +230,13 @@ public:
     c_->pix_fmt =
         hw_pixfmt_ != AV_PIX_FMT_NONE ? hw_pixfmt_ : (AVPixelFormat)pixfmt_;
     c_->sw_pix_fmt = (AVPixelFormat)pixfmt_;
-    util_encode::set_av_codec_ctx(c_, name_, kbs_, gop_, fps_);
+    util_encode::set_av_codec_ctx(c_, name_, gop_, fps_);
     if (!util_encode::set_lantency_free(c_->priv_data, name_)) {
       LOG_ERROR("set_lantency_free failed, name: " + name_);
       return false;
     }
     // util_encode::set_quality(c_->priv_data, name_, quality_);
-    util_encode::set_rate_control(c_, name_, rc_, q_);
+    util_encode::set_rate_control(c_, name_, kbs_);
     util_encode::set_gpu(c_->priv_data, name_, gpu_);
     util_encode::force_hw(c_->priv_data, name_);
     util_encode::set_others(c_->priv_data, name_);
