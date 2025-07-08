@@ -298,56 +298,47 @@ impl Encoder {
             return true;
         });
 
-        let infos = Arc::new(Mutex::new(Vec::<CodecInfo>::new()));
-        let mut res = vec![];
+        let mut return_res = vec![];
 
-        let mutex = Arc::new(Mutex::new(0));
         if let Ok(yuv) = Encoder::dummy_yuv(ctx.clone()) {
             let yuv = Arc::new(yuv);
-            let mut handles = vec![];
             log::info!("all tested encoders: {:?}", codecs);
             for codec in codecs {
                 let yuv = yuv.clone();
-                let infos = infos.clone();
-                let mutex = mutex.clone();
-                let handle = thread::spawn(move || {
-                    let _lock;
-                    if codec.name.contains("nvenc") || codec.name.contains("mf") {
-                        _lock = mutex.lock().unwrap();
-                    }
-                    let c = EncodeContext {
-                        name: codec.name.clone(),
-                        mc_name: codec.mc_name.clone(),
-                        ..ctx
-                    };
-                    log::info!("testing encoder: {:?}", c);
-                    if let Ok(mut encoder) = Encoder::new(c.clone()) {
-                        log::info!("encoder created: {:?}", c);
-                        let start = std::time::Instant::now();
-                        let res = encoder.encode(&yuv, 0);
-                        log::info!("encoder encode result: {:?}", res.is_ok());
-                        if let Ok(frames) = res {
-                            if frames.len() == 1 {
-                                if frames[0].key == 1
-                                    && start.elapsed().as_millis() < TEST_TIMEOUT_MS as _
-                                {
-                                    infos.lock().unwrap().push(codec);
-                                }
+                let c = EncodeContext {
+                    name: codec.name.clone(),
+                    mc_name: codec.mc_name.clone(),
+                    ..ctx
+                };
+                log::info!(
+                    "========================== testing encoder start: {:?}",
+                    codec.name
+                );
+                let res = Encoder::new(c.clone());
+                log::info!("encoder new result: {:?}", res.is_ok());
+                if let Ok(mut encoder) = res {
+                    let start = std::time::Instant::now();
+                    let res = encoder.encode(&yuv, 0);
+                    log::info!("encoder encode result: {:?}", res.is_ok());
+                    if let Ok(frames) = res {
+                        if frames.len() == 1 {
+                            if frames[0].key == 1
+                                && start.elapsed().as_millis() < TEST_TIMEOUT_MS as _
+                            {
+                                return_res.push(codec.clone());
                             }
                         }
                     }
-                });
-                handles.push(handle);
-            }
-            log::info!("waiting for all encoders to finish");
-            for handle in handles {
-                handle.join().ok();
+                }
+                log::info!(
+                    "========================== testing encoder finished: {:?}",
+                    codec.name
+                );
             }
             log::info!("all encoders finished");
-            res = infos.lock().unwrap().clone();
         }
 
-        res
+        return_res
     }
 
     fn dummy_yuv(ctx: EncodeContext) -> Result<Vec<u8>, ()> {

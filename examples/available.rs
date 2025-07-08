@@ -10,6 +10,7 @@ use hwcodec::{
 
 fn main() {
     init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
+    log::info!("single thread test");
     ram();
     #[cfg(feature = "vram")]
     vram();

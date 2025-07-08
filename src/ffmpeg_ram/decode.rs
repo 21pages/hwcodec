@@ -249,71 +249,51 @@ impl Decoder {
             }
         }
 
-        let infos = Arc::new(Mutex::new(Vec::<CodecInfo>::new()));
         let buf264 = Arc::new(crate::common::DATA_H264_720P);
         let buf265 = Arc::new(crate::common::DATA_H265_720P);
-        let mut handles = vec![];
-        let mutex = Arc::new(Mutex::new(0));
         log::info!("all tested decoders: {:?}", codecs);
+        let mut return_res = vec![];
         for codec in codecs {
-            let infos = infos.clone();
             let buf264 = buf264.clone();
             let buf265 = buf265.clone();
-            let mutex = mutex.clone();
-            log::info!("testing decoder: {:?}", codec);
-            let handle = thread::spawn(move || {
-                let _lock;
-                if codec.hwdevice == AV_HWDEVICE_TYPE_CUDA
-                    || codec.hwdevice == AV_HWDEVICE_TYPE_D3D11VA
-                {
-                    _lock = mutex.lock().unwrap();
-                }
-                let c = DecodeContext {
-                    name: codec.name.clone(),
-                    device_type: codec.hwdevice,
-                    thread_count: 4,
+            let c = DecodeContext {
+                name: codec.name.clone(),
+                device_type: codec.hwdevice,
+                thread_count: 4,
+            };
+            log::info!(
+                "========================== testing decoder start: {:?} {:?}",
+                codec.name,
+                codec.hwdevice
+            );
+            let res = Decoder::new(c.clone());
+            log::info!("decoder new result: {:?}", res.is_ok());
+            if let Ok(mut decoder) = res {
+                let data = match codec.format {
+                    H264 => &buf264[..],
+                    H265 => &buf265[..],
+                    _ => {
+                        log::error!("unsupported format: {:?}", codec.format);
+                        continue;
+                    }
                 };
-                log::info!("decoder before new: {:?}", c);
-                let res = Decoder::new(c.clone());
-                log::info!("decoder new result: {:?}", res.is_ok());
-                if let Ok(mut decoder) = res {
-                    let data = match codec.format {
-                        H264 => &buf264[..],
-                        H265 => &buf265[..],
-                        _ => {
-                            log::error!("unsupported format: {:?}", codec.format);
-                            return;
-                        }
-                    };
-                    let start = Instant::now();
-                    let res = decoder.decode(data);
-                    log::info!("decoder decode result: {:?}", res.is_ok());
-                    if let Ok(_) = res {
-                        if start.elapsed().as_millis() < TEST_TIMEOUT_MS as _ {
-                            infos.lock().unwrap().push(codec);
-                        }
+                let start = Instant::now();
+                let res = decoder.decode(data);
+                log::info!("decoder decode result: {:?}", res.is_ok());
+                if let Ok(_) = res {
+                    if start.elapsed().as_millis() < TEST_TIMEOUT_MS as _ {
+                        return_res.push(codec.clone());
                     }
                 }
-            });
+            }
 
-            handles.push(handle);
+            log::info!(
+                "========================== testing decoder finished: {:?} {:?}",
+                codec.name,
+                codec.hwdevice
+            );
         }
-        log::info!("waiting for all decoders to finish");
-        for handle in handles {
-            handle.join().ok();
-        }
-        log::info!("all decoders finished");
-        let mut res = infos.lock().unwrap().clone();
-
-        let soft = CodecInfo::soft();
-        if let Some(c) = soft.h264 {
-            res.push(c);
-        }
-        if let Some(c) = soft.h265 {
-            res.push(c);
-        }
-
-        res
+        return_res
     }
 }
 
