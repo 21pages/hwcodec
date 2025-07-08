@@ -160,12 +160,14 @@ impl Decoder {
     }
 
     pub fn available_decoders() -> Vec<CodecInfo> {
+        log::info!("available_decoders");
         #[allow(unused_mut)]
         let mut codecs: Vec<CodecInfo> = vec![];
         // windows disable nvdec to avoid gpu stuck
         #[cfg(target_os = "linux")]
         {
             let (nv, _, _) = crate::common::supported_gpu(false);
+            log::info!("supported_gpu: nv:{:?}", nv);
             if nv {
                 codecs.push(CodecInfo {
                     name: "h264".to_owned(),
@@ -252,11 +254,13 @@ impl Decoder {
         let buf265 = Arc::new(crate::common::DATA_H265_720P);
         let mut handles = vec![];
         let mutex = Arc::new(Mutex::new(0));
+        log::info!("all tested decoders: {:?}", codecs);
         for codec in codecs {
             let infos = infos.clone();
             let buf264 = buf264.clone();
             let buf265 = buf265.clone();
             let mutex = mutex.clone();
+            log::info!("testing decoder: {:?}", codec);
             let handle = thread::spawn(move || {
                 let _lock;
                 if codec.hwdevice == AV_HWDEVICE_TYPE_CUDA
@@ -269,7 +273,10 @@ impl Decoder {
                     device_type: codec.hwdevice,
                     thread_count: 4,
                 };
-                if let Ok(mut decoder) = Decoder::new(c) {
+                log::info!("decoder before new: {:?}", c);
+                let res = Decoder::new(c.clone());
+                log::info!("decoder new result: {:?}", res.is_ok());
+                if let Ok(mut decoder) = res {
                     let data = match codec.format {
                         H264 => &buf264[..],
                         H265 => &buf265[..],
@@ -279,7 +286,9 @@ impl Decoder {
                         }
                     };
                     let start = Instant::now();
-                    if let Ok(_) = decoder.decode(data) {
+                    let res = decoder.decode(data);
+                    log::info!("decoder decode result: {:?}", res.is_ok());
+                    if let Ok(_) = res {
                         if start.elapsed().as_millis() < TEST_TIMEOUT_MS as _ {
                             infos.lock().unwrap().push(codec);
                         }
@@ -289,9 +298,11 @@ impl Decoder {
 
             handles.push(handle);
         }
+        log::info!("waiting for all decoders to finish");
         for handle in handles {
             handle.join().ok();
         }
+        log::info!("all decoders finished");
         let mut res = infos.lock().unwrap().clone();
 
         let soft = CodecInfo::soft();

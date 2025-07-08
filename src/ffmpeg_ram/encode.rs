@@ -168,6 +168,7 @@ impl Encoder {
     }
 
     pub fn available_encoders(ctx: EncodeContext, _sdk: Option<String>) -> Vec<CodecInfo> {
+        log::info!("available_encoders");
         if !(cfg!(windows) || cfg!(target_os = "linux") || cfg!(target_os = "macos")) {
             return vec![];
         }
@@ -190,6 +191,12 @@ impl Encoder {
                 true
             };
             let (_nv, amf, _intel) = crate::common::supported_gpu(true);
+            log::info!(
+                "supported_gpu: nv:{:?}, amf:{:?}, intel:{:?}",
+                _nv,
+                amf,
+                _intel
+            );
 
             #[cfg(windows)]
             if _intel && contains(Driver::MFX, H264) {
@@ -298,6 +305,7 @@ impl Encoder {
         if let Ok(yuv) = Encoder::dummy_yuv(ctx.clone()) {
             let yuv = Arc::new(yuv);
             let mut handles = vec![];
+            log::info!("all tested encoders: {:?}", codecs);
             for codec in codecs {
                 let yuv = yuv.clone();
                 let infos = infos.clone();
@@ -312,9 +320,13 @@ impl Encoder {
                         mc_name: codec.mc_name.clone(),
                         ..ctx
                     };
-                    if let Ok(mut encoder) = Encoder::new(c) {
+                    log::info!("testing encoder: {:?}", c);
+                    if let Ok(mut encoder) = Encoder::new(c.clone()) {
+                        log::info!("encoder created: {:?}", c);
                         let start = std::time::Instant::now();
-                        if let Ok(frames) = encoder.encode(&yuv, 0) {
+                        let res = encoder.encode(&yuv, 0);
+                        log::info!("encoder encode result: {:?}", res.is_ok());
+                        if let Ok(frames) = res {
                             if frames.len() == 1 {
                                 if frames[0].key == 1
                                     && start.elapsed().as_millis() < TEST_TIMEOUT_MS as _
@@ -327,9 +339,11 @@ impl Encoder {
                 });
                 handles.push(handle);
             }
+            log::info!("waiting for all encoders to finish");
             for handle in handles {
                 handle.join().ok();
             }
+            log::info!("all encoders finished");
             res = infos.lock().unwrap().clone();
         }
 
