@@ -99,3 +99,42 @@ pub fn get_gpu_signature() -> u64 {
         0
     }
 }
+
+pub fn setup_parent_death_signal() {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    INIT.call_once(|| {
+        #[cfg(target_os = "linux")]
+        {
+            use std::ffi::c_int;
+            extern "C" {
+                fn linux_setup_parent_death_signal() -> c_int;
+            }
+            unsafe {
+                let result = linux_setup_parent_death_signal();
+                if result == 0 {
+                    log::debug!("Successfully set up parent death signal on Linux");
+                } else {
+                    log::warn!("Failed to set up parent death signal on Linux: {}", result);
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::ffi::c_int;
+            extern "C" {
+                fn mac_setup_parent_death_signal() -> c_int;
+            }
+            unsafe {
+                let result = mac_setup_parent_death_signal();
+                if result == 0 {
+                    log::debug!("Successfully set up parent death signal on macOS");
+                } else {
+                    log::warn!("Failed to set up parent death signal on macOS: {}", result);
+                }
+            }
+        }
+    });
+}

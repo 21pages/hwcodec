@@ -1,9 +1,13 @@
 #include "linux.h"
 #include "../../log.h"
+#include <cstring>
 #include <dlfcn.h>
 #include <dynlink_cuda.h>
 #include <dynlink_loader.h>
+#include <errno.h>
 #include <exception> // Include the necessary header file
+#include <signal.h>
+#include <sys/prctl.h>
 
 namespace
 {
@@ -98,4 +102,17 @@ int linux_support_intel()
     }
   }
   return -1;
+}
+
+int linux_setup_parent_death_signal() {
+  // Set up parent death signal to ensure this process dies if parent dies
+  // This prevents orphaned processes especially when running with different
+  // user permissions
+  int ret = prctl(PR_SET_PDEATHSIG, SIGKILL);
+  if (ret != 0) {
+    LOG_ERROR("Failed to set parent death signal:" + std::to_string(errno));
+    return -1;
+  } else {
+    return 0;
+  }
 }
