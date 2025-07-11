@@ -9,11 +9,16 @@ use hwcodec::{
 };
 
 fn main() {
+    let start = std::time::Instant::now();
     init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
     ram();
     #[cfg(feature = "vram")]
     vram();
-    log::info!("signature: {:?}", get_gpu_signature());
+    log::info!(
+        "signature: {:?}, elapsed: {:?}",
+        get_gpu_signature(),
+        start.elapsed()
+    );
 }
 
 fn ram() {

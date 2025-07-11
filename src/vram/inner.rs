@@ -1,10 +1,9 @@
-use crate::common::{DataFormat, DecodeCallback, EncodeCallback, API};
+use crate::common::{DataFormat, DecodeCallback, EncodeCallback};
 use std::os::raw::{c_int, c_void};
 
 pub type NewEncoderCall = unsafe extern "C" fn(
     hdl: *mut c_void,
     luid: i64,
-    deviceType: i32,
     codecID: i32,
     width: i32,
     height: i32,
@@ -22,7 +21,7 @@ pub type EncodeCall = unsafe extern "C" fn(
 ) -> c_int;
 
 pub type NewDecoderCall =
-    unsafe extern "C" fn(device: *mut c_void, luid: i64, api: i32, dataFormat: i32) -> *mut c_void;
+    unsafe extern "C" fn(device: *mut c_void, luid: i64, dataFormat: i32) -> *mut c_void;
 
 pub type DecodeCall = unsafe extern "C" fn(
     decoder: *mut c_void,
@@ -33,26 +32,32 @@ pub type DecodeCall = unsafe extern "C" fn(
 ) -> c_int;
 
 pub type TestEncodeCall = unsafe extern "C" fn(
-    outDescs: *mut c_void,
+    outLuids: *mut i64,
+    outVendors: *mut i32,
     maxDescNum: i32,
     outDescNum: *mut i32,
-    api: i32,
     dataFormat: i32,
     width: i32,
     height: i32,
     kbs: i32,
     framerate: i32,
     gop: i32,
+    excludedLuids: *const i64,
+    excludeFormats: *const i32,
+    excludeCount: i32,
 ) -> c_int;
 
 pub type TestDecodeCall = unsafe extern "C" fn(
-    outDescs: *mut c_void,
+    outLuids: *mut i64,
+    outVendors: *mut i32,
     maxDescNum: i32,
     outDescNum: *mut i32,
-    api: i32,
     dataFormat: i32,
     data: *mut u8,
     length: i32,
+    excludedLuids: *const i64,
+    excludeFormats: *const i32,
+    excludeCount: i32,
 ) -> c_int;
 
 pub type IVCall = unsafe extern "C" fn(v: *mut c_void) -> c_int;
@@ -75,11 +80,9 @@ pub struct DecodeCalls {
 }
 
 pub struct InnerEncodeContext {
-    pub api: API,
     pub format: DataFormat,
 }
 
 pub struct InnerDecodeContext {
-    pub api: API,
     pub data_format: DataFormat,
 }

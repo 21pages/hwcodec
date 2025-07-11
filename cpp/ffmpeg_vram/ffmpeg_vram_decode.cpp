@@ -48,8 +48,7 @@ public:
   bool bt709_ = false;
   bool full_range_ = false;
 
-  FFmpegVRamDecoder(void *device, int64_t luid, API api,
-                    DataFormat dataFormat) {
+  FFmpegVRamDecoder(void *device, int64_t luid, DataFormat dataFormat) {
     device_ = device;
     luid_ = luid;
     dataFormat_ = dataFormat;
@@ -64,14 +63,8 @@ public:
       LOG_ERROR("unsupported data format");
       break;
     }
-    switch (api) {
-    case API_DX11:
-      device_type_ = AV_HWDEVICE_TYPE_D3D11VA;
-      break;
-    default:
-      LOG_ERROR("unsupported api");
-      break;
-    }
+    // Always use DX11 since it's the only API
+    device_type_ = AV_HWDEVICE_TYPE_D3D11VA;
   }
 
   ~FFmpegVRamDecoder() {}
@@ -323,11 +316,11 @@ extern "C" int ffmpeg_vram_destroy_decoder(FFmpegVRamDecoder *decoder) {
 }
 
 extern "C" FFmpegVRamDecoder *ffmpeg_vram_new_decoder(void *device,
-                                                      int64_t luid, API api,
+                                                      int64_t luid,
                                                       DataFormat dataFormat) {
   FFmpegVRamDecoder *decoder = NULL;
   try {
-    decoder = new FFmpegVRamDecoder(device, luid, api, dataFormat);
+    decoder = new FFmpegVRamDecoder(device, luid, dataFormat);
     if (decoder) {
       if (decoder->reset() == 0) {
         return decoder;
@@ -360,30 +353,52 @@ extern "C" int ffmpeg_vram_decode(FFmpegVRamDecoder *decoder,
   return HWCODEC_ERR_COMMON;
 }
 
-extern "C" int ffmpeg_vram_test_decode(AdapterDesc *outDescs,
+extern "C" int ffmpeg_vram_test_decode(int64_t *outLuids, int32_t *outVendors,
                                        int32_t maxDescNum, int32_t *outDescNum,
-                                       API api, DataFormat dataFormat,
-                                       uint8_t *data, int32_t length) {
+                                       DataFormat dataFormat,
+                                       uint8_t *data, int32_t length,
+                                       const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     int count = 0;
-    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL, ADAPTER_VENDOR_NVIDIA,
-                               ADAPTER_VENDOR_AMD};
-    for (auto vendor : vendors) {
+    struct VendorMapping {
+      AdapterVendor adapter_vendor;
+      int driver_vendor;
+    };
+    VendorMapping vendors[] = {
+      {ADAPTER_VENDOR_INTEL, VENDOR_INTEL},
+      {ADAPTER_VENDOR_NVIDIA, VENDOR_NV},
+      {ADAPTER_VENDOR_AMD, VENDOR_AMD}
+    };
+    
+    for (auto vendorMap : vendors) {
       Adapters adapters;
-      if (!adapters.Init(vendor))
+      if (!adapters.Init(vendorMap.adapter_vendor))
         continue;
       for (auto &adapter : adapters.adapters_) {
+        int64_t currentLuid = LUID(adapter.get()->desc1_);
+        
+        // Check if this luid+format combination should be excluded
+        bool shouldExclude = false;
+        for (int32_t i = 0; i < excludeCount; i++) {
+          if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+            shouldExclude = true;
+            break;
+          }
+        }
+        
+        if (shouldExclude) {
+          continue;
+        }
         FFmpegVRamDecoder *p = (FFmpegVRamDecoder *)ffmpeg_vram_new_decoder(
-            nullptr, LUID(adapter.get()->desc1_), api, dataFormat);
+            nullptr, LUID(adapter.get()->desc1_), dataFormat);
         if (!p)
           continue;
         auto start = util::now();
         bool succ = ffmpeg_vram_decode(p, data, length, nullptr, nullptr) == 0;
         int64_t elapsed = util::elapsed_ms(start);
         if (succ && elapsed < TEST_TIMEOUT_MS) {
-          AdapterDesc *desc = descs + count;
-          desc->luid = LUID(adapter.get()->desc1_);
+          outLuids[count] = LUID(adapter.get()->desc1_);
+          outVendors[count] = (int32_t)vendorMap.driver_vendor;  // Map adapter vendor to driver vendor
           count += 1;
         }
         p->destroy();

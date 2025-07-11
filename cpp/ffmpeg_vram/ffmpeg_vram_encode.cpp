@@ -70,7 +70,6 @@ public:
 
   void *handle_ = nullptr;
   int64_t luid_;
-  API api_;
   DataFormat dataFormat_;
   int32_t width_ = 0;
   int32_t height_ = 0;
@@ -81,12 +80,11 @@ public:
   const int align_ = 0;
   const bool full_range_ = false;
   const bool bt709_ = false;
-  FFmpegVRamEncoder(void *handle, int64_t luid, API api, DataFormat dataFormat,
+  FFmpegVRamEncoder(void *handle, int64_t luid, DataFormat dataFormat,
                     int32_t width, int32_t height, int32_t kbs,
                     int32_t framerate, int32_t gop) {
     handle_ = handle;
     luid_ = luid;
-    api_ = api;
     dataFormat_ = dataFormat;
     width_ = width;
     height_ = height;
@@ -431,13 +429,13 @@ void unlockContext(void *lock_ctx) { (void)lock_ctx; }
 } // namespace
 
 extern "C" {
-FFmpegVRamEncoder *ffmpeg_vram_new_encoder(void *handle, int64_t luid, API api,
+FFmpegVRamEncoder *ffmpeg_vram_new_encoder(void *handle, int64_t luid,
                                            DataFormat dataFormat, int32_t width,
                                            int32_t height, int32_t kbs,
                                            int32_t framerate, int32_t gop) {
   FFmpegVRamEncoder *encoder = NULL;
   try {
-    encoder = new FFmpegVRamEncoder(handle, luid, api, dataFormat, width,
+    encoder = new FFmpegVRamEncoder(handle, luid, dataFormat, width,
                                     height, kbs, framerate, gop);
     if (encoder) {
       if (encoder->init()) {
@@ -495,23 +493,46 @@ int ffmpeg_vram_set_framerate(FFmpegVRamEncoder *encoder, int32_t framerate) {
   return -1;
 }
 
-int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
-                            int32_t *outDescNum, API api, DataFormat dataFormat,
+int ffmpeg_vram_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+                            int32_t *outDescNum, DataFormat dataFormat,
                             int32_t width, int32_t height, int32_t kbs,
-                            int32_t framerate, int32_t gop) {
+                            int32_t framerate, int32_t gop,
+                            const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     int count = 0;
-    AdapterVendor vendors[] = {ADAPTER_VENDOR_INTEL, ADAPTER_VENDOR_NVIDIA,
-                               ADAPTER_VENDOR_AMD};
-    for (auto vendor : vendors) {
+    struct VendorMapping {
+       AdapterVendor adapter_vendor;
+       int driver_vendor;
+    };
+    VendorMapping vendors[] = {
+      {ADAPTER_VENDOR_INTEL, VENDOR_INTEL},
+      {ADAPTER_VENDOR_NVIDIA, VENDOR_NV},
+      {ADAPTER_VENDOR_AMD, VENDOR_AMD}
+    };
+    
+    for (auto vendorMap : vendors) {
       Adapters adapters;
-      if (!adapters.Init(vendor))
+      if (!adapters.Init(vendorMap.adapter_vendor))
         continue;
       for (auto &adapter : adapters.adapters_) {
+        int64_t currentLuid = LUID(adapter.get()->desc1_);
+        
+        // Check if this luid+format combination should be excluded
+        bool shouldExclude = false;
+        for (int32_t i = 0; i < excludeCount; i++) {
+          if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+            shouldExclude = true;
+            break;
+          }
+        }
+        
+        if (shouldExclude) {
+          continue;
+        }
+        
         FFmpegVRamEncoder *e = (FFmpegVRamEncoder *)ffmpeg_vram_new_encoder(
-            (void *)adapter.get()->device_.Get(), LUID(adapter.get()->desc1_),
-            api, dataFormat, width, height, kbs, framerate, gop);
+            (void *)adapter.get()->device_.Get(), currentLuid,
+            dataFormat, width, height, kbs, framerate, gop);
         if (!e)
           continue;
         if (e->native_->EnsureTexture(e->width_, e->height_)) {
@@ -522,8 +543,8 @@ int ffmpeg_vram_test_encode(void *outDescs, int32_t maxDescNum,
                                  &key_obj, 0) == 0 && key_obj == 1;
           int64_t elapsed = util::elapsed_ms(start);
           if (succ && elapsed < TEST_TIMEOUT_MS) {
-            AdapterDesc *desc = descs + count;
-            desc->luid = LUID(adapter.get()->desc1_);
+            outLuids[count] = currentLuid;
+            outVendors[count] = (int32_t)vendorMap.driver_vendor;  // Map adapter vendor to driver vendor
             count += 1;
           }
         }

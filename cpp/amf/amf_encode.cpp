@@ -469,7 +469,7 @@ int amf_destroy_encoder(void *encoder) {
   return -1;
 }
 
-void *amf_new_encoder(void *handle, int64_t luid, API api,
+void *amf_new_encoder(void *handle, int64_t luid,
                       DataFormat dataFormat, int32_t width, int32_t height,
                       int32_t kbs, int32_t framerate, int32_t gop) {
   AMFEncoder *enc = NULL;
@@ -479,7 +479,7 @@ void *amf_new_encoder(void *handle, int64_t luid, API api,
       return NULL;
     }
     amf::AMF_MEMORY_TYPE memoryType;
-    if (!convert_api(api, memoryType)) {
+    if (!convert_api(memoryType)) {
       return NULL;
     }
     enc = new AMFEncoder(handle, memoryType, codecStr, dataFormat, width,
@@ -524,25 +524,39 @@ int amf_driver_support() {
   return -1;
 }
 
-int amf_test_encode(void *outDescs, int32_t maxDescNum, int32_t *outDescNum,
-                    API api, DataFormat dataFormat, int32_t width,
+int amf_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum, int32_t *outDescNum,
+                    DataFormat dataFormat, int32_t width,
                     int32_t height, int32_t kbs, int32_t framerate,
-                    int32_t gop) {
+                    int32_t gop, const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     Adapters adapters;
     if (!adapters.Init(ADAPTER_VENDOR_AMD))
       return -1;
     int count = 0;
     for (auto &adapter : adapters.adapters_) {
+      int64_t currentLuid = LUID(adapter.get()->desc1_);
+      
+      // Check if this luid+format combination should be excluded
+      bool shouldExclude = false;
+      for (int32_t i = 0; i < excludeCount; i++) {
+        if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+          shouldExclude = true;
+          break;
+        }
+      }
+      
+      if (shouldExclude) {
+        continue;
+      }
+      
       AMFEncoder *e = (AMFEncoder *)amf_new_encoder(
-          (void *)adapter.get()->device_.Get(), LUID(adapter.get()->desc1_),
-          api, dataFormat, width, height, kbs, framerate, gop);
+          (void *)adapter.get()->device_.Get(), currentLuid,
+          dataFormat, width, height, kbs, framerate, gop);
       if (!e)
         continue;
       if (e->test() == AMF_OK) {
-        AdapterDesc *desc = descs + count;
-        desc->luid = LUID(adapter.get()->desc1_);
+        outLuids[count] = currentLuid;
+        outVendors[count] = VENDOR_AMD;
         count += 1;
       }
       e->destroy();

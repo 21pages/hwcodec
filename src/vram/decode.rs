@@ -1,5 +1,5 @@
 use crate::{
-    common::{AdapterDesc, DataFormat::*, Driver::*},
+    common::{DataFormat::*, Driver::*},
     ffmpeg::init_av_log,
     vram::{amf, ffmpeg, inner::DecodeCalls, mfx, nv, DecodeContext},
 };
@@ -37,7 +37,6 @@ impl Decoder {
             let codec = (calls.new)(
                 ctx.device.unwrap_or(std::ptr::null_mut()),
                 ctx.luid,
-                ctx.api as i32,
                 ctx.data_format as i32,
             );
             if codec.is_null() {
@@ -137,21 +136,22 @@ pub fn available() -> Vec<DecodeContext> {
         .drain(..)
         .map(|(driver, n)| DecodeContext {
             device: None,
-            driver,
+            driver: driver.clone(),
+            vendor: driver, // Initially set vendor same as driver, will be updated by test results
             data_format: n.data_format,
-            api: n.api,
             luid: 0,
         })
         .collect();
 
     let mut outputs = Vec::<DecodeContext>::new();
+    let mut exclude_luid_formats = Vec::<(i64, i32)>::new();
     let buf264 = &crate::common::DATA_H264_720P[..];
     let buf265 = &crate::common::DATA_H265_720P[..];
 
     for input in inputs {
         debug!(
-            "Testing vram decoder: driver={:?}, api={:?}, format={:?}",
-            input.driver, input.api, input.data_format
+            "Testing vram decoder: driver={:?}, format={:?}",
+            input.driver, input.data_format
         );
 
         let test = match input.driver {
@@ -161,8 +161,8 @@ pub fn available() -> Vec<DecodeContext> {
             FFMPEG => ffmpeg::decode_calls().test,
         };
 
-        let mut descs: Vec<AdapterDesc> = vec![];
-        descs.resize(crate::vram::MAX_ADATERS, unsafe { std::mem::zeroed() });
+        let mut luids: Vec<i64> = vec![0; crate::vram::MAX_ADATERS];
+        let mut vendors: Vec<i32> = vec![0; crate::vram::MAX_ADATERS];
         let mut desc_count: i32 = 0;
 
         let data = match input.data_format {
@@ -174,27 +174,42 @@ pub fn available() -> Vec<DecodeContext> {
             }
         };
 
+        let (excluded_luids, exclude_formats): (Vec<i64>, Vec<i32>) = exclude_luid_formats
+            .iter()
+            .map(|(luid, format)| (*luid, *format))
+            .unzip();
+
         let result = unsafe {
             test(
-                descs.as_mut_ptr() as _,
-                descs.len() as _,
+                luids.as_mut_ptr(),
+                vendors.as_mut_ptr(),
+                luids.len() as _,
                 &mut desc_count,
-                input.api as _,
                 input.data_format as i32,
                 data.as_ptr() as *mut u8,
                 data.len() as _,
+                excluded_luids.as_ptr(),
+                exclude_formats.as_ptr(),
+                exclude_luid_formats.len() as i32,
             )
         };
 
         if result == 0 {
-            if desc_count as usize <= descs.len() {
+            if desc_count as usize <= luids.len() {
                 debug!(
                     "vram decoder test passed: driver={:?}, adapters={}",
                     input.driver, desc_count
                 );
                 for i in 0..desc_count as usize {
                     let mut input = input.clone();
-                    input.luid = descs[i].luid;
+                    input.luid = luids[i];
+                    input.vendor = match vendors[i] {
+                        0 => NV,
+                        1 => AMF,
+                        2 => MFX,
+                        _ => continue,
+                    };
+                    exclude_luid_formats.push((luids[i], input.data_format as i32));
                     outputs.push(input);
                 }
             }

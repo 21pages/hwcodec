@@ -7,15 +7,9 @@
 #define AMF_FACILITY L"AMFCommon"
 #endif
 
-static bool convert_api(API lhs, amf::AMF_MEMORY_TYPE &rhs) {
-  switch (lhs) {
-  case API_DX11:
-    rhs = amf::AMF_MEMORY_DX11;
-    break;
-  default:
-    std::cerr << "unsupported memory type: " << static_cast<int>(lhs) << "\n";
-    return false;
-  }
+static bool convert_api(amf::AMF_MEMORY_TYPE &rhs) {
+  // Always use DX11 since it's the only supported API
+  rhs = amf::AMF_MEMORY_DX11;
   return true;
 }
 

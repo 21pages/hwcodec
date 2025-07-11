@@ -5,7 +5,7 @@
 include!(concat!(env!("OUT_DIR"), "/amf_ffi.rs"));
 
 use crate::{
-    common::{DataFormat::*, API::*},
+    common::DataFormat::*,
     vram::inner::{DecodeCalls, EncodeCalls, InnerDecodeContext, InnerEncodeContext},
 };
 
@@ -34,21 +34,13 @@ pub fn possible_support_encoders() -> Vec<InnerEncodeContext> {
     if unsafe { amf_driver_support() } != 0 {
         return vec![];
     }
-    let mut devices = vec![];
-    #[cfg(windows)]
-    devices.append(&mut vec![API_DX11]);
-    #[cfg(target_os = "linux")]
-    devices.append(&mut vec![API_OPENCL, API_VULKAN]);
     let codecs = vec![H264, H265];
 
     let mut v = vec![];
-    for device in devices.iter() {
-        for codec in codecs.iter() {
-            v.push(InnerEncodeContext {
-                api: device.clone(),
-                format: codec.clone(),
-            });
-        }
+    for codec in codecs.iter() {
+        v.push(InnerEncodeContext {
+            format: codec.clone(),
+        });
     }
     v
 }
@@ -57,22 +49,14 @@ pub fn possible_support_decoders() -> Vec<InnerDecodeContext> {
     if unsafe { amf_driver_support() } != 0 {
         return vec![];
     }
-    let mut devices = vec![];
-    #[cfg(windows)]
-    devices.append(&mut vec![API_DX11]);
-    #[cfg(target_os = "linux")]
-    devices.append(&mut vec![OPENCL, VULKAN]);
     // https://github.com/GPUOpen-LibrariesAndSDKs/AMF/issues/432#issuecomment-1873141122
     let codecs = vec![H264];
 
     let mut v = vec![];
-    for device in devices.iter() {
-        for codec in codecs.iter() {
-            v.push(InnerDecodeContext {
-                api: device.clone(),
-                data_format: codec.clone(),
-            });
-        }
+    for codec in codecs.iter() {
+        v.push(InnerDecodeContext {
+            data_format: codec.clone(),
+        });
     }
     v
 }

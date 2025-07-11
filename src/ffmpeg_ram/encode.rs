@@ -174,7 +174,7 @@ impl Encoder {
         let mut codecs: Vec<CodecInfo> = vec![];
         #[cfg(any(windows, target_os = "linux"))]
         {
-            let contains = |_driver: Driver, _format: DataFormat| {
+            let contains = |_vendor: Driver, _format: DataFormat| {
                 #[cfg(all(windows, feature = "vram"))]
                 {
                     if let Some(_sdk) = _sdk.as_ref() {
@@ -182,7 +182,7 @@ impl Encoder {
                             if let Ok(available) =
                                 crate::vram::Available::deserialize(_sdk.as_str())
                             {
-                                return available.contains(true, _driver, _format);
+                                return available.contains(true, _vendor, _format);
                             }
                         }
                     }
@@ -299,6 +299,14 @@ impl Encoder {
 
         if let Ok(yuv) = Encoder::dummy_yuv(ctx.clone()) {
             for codec in codecs {
+                // Skip if this format already exists in results
+                if res
+                    .iter()
+                    .any(|existing: &CodecInfo| existing.format == codec.format)
+                {
+                    continue;
+                }
+
                 debug!("Testing encoder: {}", codec.name);
 
                 let c = EncodeContext {

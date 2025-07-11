@@ -1,6 +1,6 @@
 use capture::dxgi;
 use env_logger::{init_from_env, Env, DEFAULT_FILTER_ENV};
-use hwcodec::common::{DataFormat, Driver, API::*, MAX_GOP};
+use hwcodec::common::{DataFormat, Driver, MAX_GOP};
 use hwcodec::vram::{
     decode::Decoder, encode::Encoder, DecodeContext, DynamicContext, EncodeContext, FeatureContext,
 };
@@ -23,7 +23,7 @@ fn main() {
         let en_ctx = EncodeContext {
             f: FeatureContext {
                 driver: Driver::FFMPEG,
-                api: API_DX11,
+                vendor: Driver::NV,
                 data_format,
                 luid,
             },
@@ -39,7 +39,7 @@ fn main() {
         let de_ctx = DecodeContext {
             device: Some(render.device()),
             driver: Driver::FFMPEG,
-            api: API_DX11,
+            vendor: Driver::NV,
             data_format,
             luid,
         };

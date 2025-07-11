@@ -30,12 +30,12 @@ enum DataFormat {
   AV1,
 };
 
-enum API {
-  API_DX11,
-};
-
-struct AdapterDesc {
-  int64_t luid;
+// same as Driver
+enum Vendor {
+  VENDOR_NV = 0,
+  VENDOR_AMD = 1,
+  VENDOR_INTEL = 2,
+  VENDOR_FFMPEG = 3
 };
 
 enum Quality { Quality_Default, Quality_High, Quality_Medium, Quality_Low };

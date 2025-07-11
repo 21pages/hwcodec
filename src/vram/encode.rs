@@ -1,5 +1,5 @@
 use crate::{
-    common::{AdapterDesc, Driver::*},
+    common::Driver::*,
     ffmpeg::init_av_log,
     vram::{
         amf, ffmpeg, inner::EncodeCalls, mfx, nv, DynamicContext, EncodeContext, FeatureContext,
@@ -38,7 +38,6 @@ impl Encoder {
             let codec = (calls.new)(
                 ctx.d.device.unwrap_or(std::ptr::null_mut()),
                 ctx.f.luid,
-                ctx.f.api as _,
                 ctx.f.data_format as i32,
                 ctx.d.width,
                 ctx.d.height,
@@ -161,8 +160,8 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
         .drain(..)
         .map(|(driver, n)| EncodeContext {
             f: FeatureContext {
-                driver,
-                api: n.api,
+                driver: driver.clone(),
+                vendor: driver, // Initially set vendor same as driver, will be updated by test results
                 data_format: n.format,
                 luid: 0,
             },
@@ -171,11 +170,12 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
         .collect();
 
     let mut outputs = Vec::<EncodeContext>::new();
+    let mut exclude_luid_formats = Vec::<(i64, i32)>::new();
 
     for input in inputs {
         debug!(
-            "Testing vram encoder: driver={:?}, api={:?}, format={:?}",
-            input.f.driver, input.f.api, input.f.data_format
+            "Testing vram encoder: driver={:?}, format={:?}",
+            input.f.driver, input.f.data_format
         );
 
         let test = match input.f.driver {
@@ -185,34 +185,49 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
             FFMPEG => ffmpeg::encode_calls().test,
         };
 
-        let mut descs: Vec<AdapterDesc> = vec![];
-        descs.resize(crate::vram::MAX_ADATERS, unsafe { std::mem::zeroed() });
+        let mut luids: Vec<i64> = vec![0; crate::vram::MAX_ADATERS];
+        let mut vendors: Vec<i32> = vec![0; crate::vram::MAX_ADATERS];
         let mut desc_count: i32 = 0;
+
+        let (excluded_luids, exclude_formats): (Vec<i64>, Vec<i32>) = exclude_luid_formats
+            .iter()
+            .map(|(luid, format)| (*luid, *format))
+            .unzip();
 
         let result = unsafe {
             test(
-                descs.as_mut_ptr() as _,
-                descs.len() as _,
+                luids.as_mut_ptr(),
+                vendors.as_mut_ptr(),
+                luids.len() as _,
                 &mut desc_count,
-                input.f.api as _,
                 input.f.data_format as i32,
                 input.d.width,
                 input.d.height,
                 input.d.kbitrate,
                 input.d.framerate,
                 input.d.gop,
+                excluded_luids.as_ptr(),
+                exclude_formats.as_ptr(),
+                exclude_luid_formats.len() as i32,
             )
         };
 
         if result == 0 {
-            if desc_count as usize <= descs.len() {
+            if desc_count as usize <= luids.len() {
                 debug!(
                     "vram encoder test passed: driver={:?}, adapters={}",
                     input.f.driver, desc_count
                 );
                 for i in 0..desc_count as usize {
                     let mut input = input.clone();
-                    input.f.luid = descs[i].luid;
+                    input.f.luid = luids[i];
+                    input.f.vendor = match vendors[i] {
+                        0 => NV,
+                        1 => AMF,
+                        2 => MFX,
+                        _ => continue,
+                    };
+                    exclude_luid_formats.push((luids[i], input.f.data_format as i32));
                     outputs.push(input);
                 }
             }

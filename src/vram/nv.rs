@@ -5,7 +5,7 @@
 include!(concat!(env!("OUT_DIR"), "/nv_ffi.rs"));
 
 use crate::{
-    common::{DataFormat::*, API::*},
+    common::DataFormat::*,
     vram::inner::{DecodeCalls, EncodeCalls, InnerDecodeContext, InnerEncodeContext},
 };
 
@@ -33,16 +33,12 @@ pub fn possible_support_encoders() -> Vec<InnerEncodeContext> {
     if unsafe { nv_encode_driver_support() } != 0 {
         return vec![];
     }
-    let devices = vec![API_DX11];
     let dataFormats = vec![H264, H265];
     let mut v = vec![];
-    for device in devices.iter() {
-        for dataFormat in dataFormats.iter() {
-            v.push(InnerEncodeContext {
-                api: device.clone(),
-                format: dataFormat.clone(),
-            });
-        }
+    for dataFormat in dataFormats.iter() {
+        v.push(InnerEncodeContext {
+            format: dataFormat.clone(),
+        });
     }
     v
 }
@@ -51,16 +47,12 @@ pub fn possible_support_decoders() -> Vec<InnerDecodeContext> {
     if unsafe { nv_encode_driver_support() } != 0 {
         return vec![];
     }
-    let devices = vec![API_DX11];
     let dataFormats = vec![H264, H265];
     let mut v = vec![];
-    for device in devices.iter() {
-        for dataFormat in dataFormats.iter() {
-            v.push(InnerDecodeContext {
-                api: device.clone(),
-                data_format: dataFormat.clone(),
-            });
-        }
+    for dataFormat in dataFormats.iter() {
+        v.push(InnerDecodeContext {
+            data_format: dataFormat.clone(),
+        });
     }
     v
 }

@@ -257,6 +257,14 @@ impl Decoder {
         let buf265 = &crate::common::DATA_H265_720P[..];
 
         for codec in codecs {
+            // Skip if this format already exists in results
+            if res
+                .iter()
+                .any(|existing: &CodecInfo| existing.format == codec.format)
+            {
+                continue;
+            }
+
             debug!(
                 "Testing decoder: {} (hwdevice: {:?})",
                 codec.name, codec.hwdevice

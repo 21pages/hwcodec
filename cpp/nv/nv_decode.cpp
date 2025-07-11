@@ -111,7 +111,6 @@ public:
 
   void *device_;
   int64_t luid_;
-  API api_;
   DataFormat dataFormat_;
 
   bool prepare_tried_ = false;
@@ -122,10 +121,9 @@ public:
   CUVIDEOFORMAT last_video_format_ = {};
 
 public:
-  CuvidDecoder(void *device, int64_t luid, API api, DataFormat dataFormat) {
+  CuvidDecoder(void *device, int64_t luid, DataFormat dataFormat) {
     device_ = device;
     luid_ = luid;
-    api_ = api;
     dataFormat_ = dataFormat;
     ZeroMemory(&last_video_format_, sizeof(last_video_format_));
     load_driver(&cudl_, &cvdl_);
@@ -616,11 +614,11 @@ int nv_destroy_decoder(void *decoder) {
   return -1;
 }
 
-void *nv_new_decoder(void *device, int64_t luid, API api,
+void *nv_new_decoder(void *device, int64_t luid,
                      DataFormat dataFormat) {
   CuvidDecoder *p = NULL;
   try {
-    p = new CuvidDecoder(device, luid, api, dataFormat);
+    p = new CuvidDecoder(device, luid, dataFormat);
     if (!p) {
       goto _exit;
     }
@@ -653,26 +651,40 @@ int nv_decode(void *decoder, uint8_t *data, int len, DecodeCallback callback,
   return HWCODEC_ERR_COMMON;
 }
 
-int nv_test_decode(AdapterDesc *outDescs, int32_t maxDescNum,
-                   int32_t *outDescNum, API api, DataFormat dataFormat,
-                   uint8_t *data, int32_t length) {
+int nv_test_decode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+                   int32_t *outDescNum, DataFormat dataFormat,
+                   uint8_t *data, int32_t length, const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     Adapters adapters;
     if (!adapters.Init(ADAPTER_VENDOR_NVIDIA))
       return -1;
     int count = 0;
     for (auto &adapter : adapters.adapters_) {
+      int64_t currentLuid = LUID(adapter.get()->desc1_);
+      
+      // Check if this luid+format combination should be excluded
+      bool shouldExclude = false;
+      for (int32_t i = 0; i < excludeCount; i++) {
+        if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+          shouldExclude = true;
+          break;
+        }
+      }
+      
+      if (shouldExclude) {
+        continue;
+      }
+      
       CuvidDecoder *p = (CuvidDecoder *)nv_new_decoder(
-          nullptr, LUID(adapter.get()->desc1_), api, dataFormat);
+          nullptr, currentLuid, dataFormat);
       if (!p)
         continue;
       auto start = util::now();
       bool succ = nv_decode(p, data, length, nullptr, nullptr) == 0;
       int64_t elapsed = util::elapsed_ms(start);
       if (succ && elapsed < TEST_TIMEOUT_MS) {
-        AdapterDesc *desc = descs + count;
-        desc->luid = LUID(adapter.get()->desc1_);
+        outLuids[count] = currentLuid;
+        outVendors[count] = VENDOR_NV;
         count += 1;
       }
       p->destroy();

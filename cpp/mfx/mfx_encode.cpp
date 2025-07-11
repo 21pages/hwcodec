@@ -77,7 +77,6 @@ public:
 
   void *handle_ = nullptr;
   int64_t luid_;
-  API api_;
   DataFormat dataFormat_;
   int32_t width_ = 0;
   int32_t height_ = 0;
@@ -88,12 +87,11 @@ public:
   bool full_range_ = false;
   bool bt709_ = false;
 
-  VplEncoder(void *handle, int64_t luid, API api, DataFormat dataFormat,
+  VplEncoder(void *handle, int64_t luid, DataFormat dataFormat,
              int32_t width, int32_t height, int32_t kbs, int32_t framerate,
              int32_t gop) {
     handle_ = handle;
     luid_ = luid;
-    api_ = api;
     dataFormat_ = dataFormat;
     width_ = width;
     height_ = height;
@@ -594,12 +592,12 @@ int mfx_destroy_encoder(void *encoder) {
   return 0;
 }
 
-void *mfx_new_encoder(void *handle, int64_t luid, API api,
+void *mfx_new_encoder(void *handle, int64_t luid,
                       DataFormat dataFormat, int32_t w, int32_t h, int32_t kbs,
                       int32_t framerate, int32_t gop) {
   VplEncoder *p = NULL;
   try {
-    p = new VplEncoder(handle, luid, api, dataFormat, w, h, kbs, framerate,
+    p = new VplEncoder(handle, luid, dataFormat, w, h, kbs, framerate,
                        gop);
     if (!p) {
       return NULL;
@@ -632,20 +630,34 @@ int mfx_encode(void *encoder, ID3D11Texture2D *tex, EncodeCallback callback,
   return -1;
 }
 
-int mfx_test_encode(void *outDescs, int32_t maxDescNum, int32_t *outDescNum,
-                    API api, DataFormat dataFormat, int32_t width,
+int mfx_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum, int32_t *outDescNum,
+                    DataFormat dataFormat, int32_t width,
                     int32_t height, int32_t kbs, int32_t framerate,
-                    int32_t gop) {
+                    int32_t gop, const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     Adapters adapters;
     if (!adapters.Init(ADAPTER_VENDOR_INTEL))
       return -1;
     int count = 0;
     for (auto &adapter : adapters.adapters_) {
+      int64_t currentLuid = LUID(adapter.get()->desc1_);
+      
+      // Check if this luid+format combination should be excluded
+      bool shouldExclude = false;
+      for (int32_t i = 0; i < excludeCount; i++) {
+        if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+          shouldExclude = true;
+          break;
+        }
+      }
+      
+      if (shouldExclude) {
+        continue;
+      }
+      
       VplEncoder *e = (VplEncoder *)mfx_new_encoder(
-          (void *)adapter.get()->device_.Get(), LUID(adapter.get()->desc1_),
-          api, dataFormat, width, height, kbs, framerate, gop);
+          (void *)adapter.get()->device_.Get(), currentLuid,
+          dataFormat, width, height, kbs, framerate, gop);
       if (!e)
         continue;
       if (e->native_->EnsureTexture(e->width_, e->height_)) {
@@ -656,8 +668,8 @@ int mfx_test_encode(void *outDescs, int32_t maxDescNum, int32_t *outDescNum,
                        0) == 0 && key_obj == 1;
         int64_t elapsed = util::elapsed_ms(start);
         if (succ && elapsed < TEST_TIMEOUT_MS) {
-          AdapterDesc *desc = descs + count;
-          desc->luid = LUID(adapter.get()->desc1_);
+          outLuids[count] = currentLuid;
+          outVendors[count] = VENDOR_INTEL;
           count += 1;
         }
       }

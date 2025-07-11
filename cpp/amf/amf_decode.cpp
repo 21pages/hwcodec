@@ -365,14 +365,14 @@ int amf_destroy_decoder(void *decoder) {
   return -1;
 }
 
-void *amf_new_decoder(void *device, int64_t luid, API api,
+void *amf_new_decoder(void *device, int64_t luid,
                       DataFormat dataFormat) {
   AMFDecoder *dec = NULL;
   try {
     amf_wstring codecStr;
     amf::AMF_MEMORY_TYPE memory;
     amf::AMF_SURFACE_FORMAT surfaceFormat;
-    if (!convert_api(api, memory)) {
+    if (!convert_api(memory)) {
       return NULL;
     }
     if (!convert_codec(dataFormat, codecStr)) {
@@ -408,26 +408,40 @@ int amf_decode(void *decoder, uint8_t *data, int32_t length,
   return HWCODEC_ERR_COMMON;
 }
 
-int amf_test_decode(AdapterDesc *outDescs, int32_t maxDescNum,
-                    int32_t *outDescNum, API api, DataFormat dataFormat,
-                    uint8_t *data, int32_t length) {
+int amf_test_decode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+                    int32_t *outDescNum, DataFormat dataFormat,
+                    uint8_t *data, int32_t length, const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
-    AdapterDesc *descs = (AdapterDesc *)outDescs;
     Adapters adapters;
     if (!adapters.Init(ADAPTER_VENDOR_AMD))
       return -1;
     int count = 0;
     for (auto &adapter : adapters.adapters_) {
+      int64_t currentLuid = LUID(adapter.get()->desc1_);
+      
+      // Check if this luid+format combination should be excluded
+      bool shouldExclude = false;
+      for (int32_t i = 0; i < excludeCount; i++) {
+        if (excludedLuids[i] == currentLuid && excludeFormats[i] == (int32_t)dataFormat) {
+          shouldExclude = true;
+          break;
+        }
+      }
+      
+      if (shouldExclude) {
+        continue;
+      }
+      
       AMFDecoder *p = (AMFDecoder *)amf_new_decoder(
-          nullptr, LUID(adapter.get()->desc1_), api, dataFormat);
+          nullptr, currentLuid, dataFormat);
       if (!p)
         continue;
       auto start = util::now();
       bool succ = p->decode(data, length, nullptr, nullptr) == AMF_OK;
       int64_t elapsed = util::elapsed_ms(start);
       if (succ && elapsed < TEST_TIMEOUT_MS) {
-        AdapterDesc *desc = descs + count;
-        desc->luid = LUID(adapter.get()->desc1_);
+        outLuids[count] = currentLuid;
+        outVendors[count] = VENDOR_AMD;
         count += 1;
       }
       p->destroy();

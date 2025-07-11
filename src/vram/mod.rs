@@ -8,7 +8,7 @@ pub(crate) mod nv;
 
 pub(crate) const MAX_ADATERS: usize = 16;
 
-use crate::common::{DataFormat, Driver, API};
+use crate::common::{DataFormat, Driver};
 pub use serde;
 pub use serde_derive;
 use serde_derive::{Deserialize, Serialize};
@@ -17,8 +17,8 @@ use std::ffi::c_void;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct FeatureContext {
     pub driver: Driver,
+    pub vendor: Driver,
     pub luid: i64,
-    pub api: API,
     pub data_format: DataFormat,
 }
 
@@ -47,8 +47,8 @@ pub struct DecodeContext {
     #[serde(skip)]
     pub device: Option<*mut c_void>,
     pub driver: Driver,
+    pub vendor: Driver,
     pub luid: i64,
-    pub api: API,
     pub data_format: DataFormat,
 }
 
@@ -76,15 +76,15 @@ impl Available {
         }
     }
 
-    pub fn contains(&self, encode: bool, driver: Driver, data_format: DataFormat) -> bool {
+    pub fn contains(&self, encode: bool, vendor: Driver, data_format: DataFormat) -> bool {
         if encode {
             self.e
                 .iter()
-                .any(|f| f.driver == driver && f.data_format == data_format)
+                .any(|f| f.vendor == vendor && f.data_format == data_format)
         } else {
             self.d
                 .iter()
-                .any(|d| d.driver == driver && d.data_format == data_format)
+                .any(|d| d.vendor == vendor && d.data_format == data_format)
         }
     }
 }
