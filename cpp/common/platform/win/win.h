@@ -130,4 +130,6 @@ extern "C" uint64_t GetHwcodecGpuSignature();
 extern "C" void hwcodec_get_d3d11_texture_width_height(ID3D11Texture2D *texture, int *w,
                                              int *h);
 
+extern "C" int32_t add_process_to_new_job(DWORD process_id);
+
 #endif

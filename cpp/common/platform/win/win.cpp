@@ -745,3 +745,49 @@ void hwcodec_get_d3d11_texture_width_height(ID3D11Texture2D *texture, int *w,
   *w = desc.Width;
   *h = desc.Height;
 }
+
+int32_t add_process_to_new_job(DWORD process_id) {
+  HANDLE job_handle = CreateJobObjectW(nullptr, nullptr);
+  if (job_handle == nullptr) {
+    LOG_ERROR("Failed to create job object");
+    return -1;
+  }
+
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {0};
+  job_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+  BOOL result = SetInformationJobObject(
+      job_handle,
+      JobObjectExtendedLimitInformation,
+      &job_info,
+      sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION)
+  );
+
+  if (result == FALSE) {
+    CloseHandle(job_handle);
+    LOG_ERROR("Failed to set job information");
+    return -1;
+  }
+
+  // Open the existing process by ID
+  HANDLE process_handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, process_id);
+  if (process_handle == nullptr) {
+    CloseHandle(job_handle);
+    LOG_ERROR("Failed to open process with ID: %lu", process_id);
+    return -1;
+  }
+
+  // Assign the child process to the Job object
+  BOOL assign_result = AssignProcessToJobObject(job_handle, process_handle);
+  if (assign_result == FALSE) {
+    CloseHandle(process_handle);
+    CloseHandle(job_handle);
+    LOG_ERROR("Failed to assign process to job");
+    return -1;
+  }
+
+  // Close process handle (but keep job handle)
+  CloseHandle(process_handle);
+
+  return 0;
+}

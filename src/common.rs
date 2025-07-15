@@ -100,26 +100,37 @@ pub fn get_gpu_signature() -> u64 {
     }
 }
 
+// called by child process
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn setup_parent_death_signal() {
     use std::sync::Once;
 
     static INIT: Once = Once::new();
 
     INIT.call_once(|| {
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        {
-            use std::ffi::c_int;
-            extern "C" {
-                fn setup_parent_death_signal() -> c_int;
-            }
-            unsafe {
-                let result = setup_parent_death_signal();
-                if result == 0 {
-                    log::debug!("Successfully set up parent death signal");
-                } else {
-                    log::warn!("Failed to set up parent death signal: {}", result);
-                }
+        use std::ffi::c_int;
+        extern "C" {
+            fn setup_parent_death_signal() -> c_int;
+        }
+        unsafe {
+            let result = setup_parent_death_signal();
+            if result == 0 {
+                log::debug!("Successfully set up parent death signal");
+            } else {
+                log::warn!("Failed to set up parent death signal: {}", result);
             }
         }
     });
+}
+
+// called by parent process
+#[cfg(windows)]
+pub fn child_exit_when_parent_exit(child_process_id: u32) -> bool {
+    unsafe {
+        extern "C" {
+             fn add_process_to_new_job(child_process_id: u32) -> i32;
+        }
+        let result = add_process_to_new_job(child_process_id);
+        result == 0
+    }
 }
