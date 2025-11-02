@@ -318,33 +318,73 @@ impl Encoder {
                 match Encoder::new(c) {
                     Ok(mut encoder) => {
                         debug!("Encoder {} created successfully", codec.name);
-                        let start = std::time::Instant::now();
+                        let mut passed = false;
+                        let mut last_err: Option<i32> = None;
 
-                        match encoder.encode(&yuv, 0) {
-                            Ok(frames) => {
-                                let elapsed = start.elapsed().as_millis();
+                        // Only retry 3 times on macOS with Intel CPU
+                        let max_attempts = if cfg!(all(target_os = "macos", target_arch = "x86_64"))
+                        {
+                            3
+                        } else {
+                            1
+                        };
+                        log::info!("max attempts: {}", max_attempts);
 
-                                if frames.len() == 1 {
-                                    if frames[0].key == 1 && elapsed < TEST_TIMEOUT_MS as _ {
-                                        debug!("Encoder {} test passed", codec.name);
-                                        res.push(codec);
+                        for attempt in 0..max_attempts {
+                            let pts = (attempt as i64) * 33;
+                            let start = std::time::Instant::now();
+                            match encoder.encode(&yuv, pts) {
+                                Ok(frames) => {
+                                    let elapsed = start.elapsed().as_millis();
+
+                                    if frames.len() == 1 {
+                                        if frames[0].key == 1 && elapsed < TEST_TIMEOUT_MS as _ {
+                                            debug!(
+                                                "Encoder {} test passed on attempt {}",
+                                                codec.name,
+                                                attempt + 1
+                                            );
+                                            res.push(codec.clone());
+                                            passed = true;
+                                            break;
+                                        } else {
+                                            debug!(
+                                                "Encoder {} test failed on attempt {} - key: {}, timeout: {}ms",
+                                                codec.name,
+                                                attempt + 1,
+                                                frames[0].key,
+                                                elapsed
+                                            );
+                                        }
                                     } else {
                                         debug!(
-                                            "Encoder {} test failed - key: {}, timeout: {}ms",
-                                            codec.name, frames[0].key, elapsed
+                                            "Encoder {} test failed on attempt {} - wrong frame count: {}",
+                                            codec.name,
+                                            attempt + 1,
+                                            frames.len()
                                         );
                                     }
-                                } else {
+                                }
+                                Err(err) => {
+                                    last_err = Some(err);
                                     debug!(
-                                        "Encoder {} test failed - wrong frame count: {}",
+                                        "Encoder {} test attempt {} returned error: {}",
                                         codec.name,
-                                        frames.len()
+                                        attempt + 1,
+                                        err
                                     );
                                 }
                             }
-                            Err(err) => {
-                                debug!("Encoder {} test failed with error: {}", codec.name, err);
-                            }
+                        }
+
+                        if !passed {
+                            debug!(
+                                "Encoder {} test failed after retries{}",
+                                codec.name,
+                                last_err
+                                    .map(|e| format!(" (last err: {})", e))
+                                    .unwrap_or_default()
+                            );
                         }
                     }
                     Err(_) => {

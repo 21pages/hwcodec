@@ -11,42 +11,98 @@
 #include <unistd.h>
 #include "../../log.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
+// ---------------------- Core: More Robust Hardware Encoder Detection ----------------------
 static int32_t hasHardwareEncoder(bool h265) {
+    CMVideoCodecType codecType = h265 ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
+    // ---------- Path A: Quick Query with Enable + Require ----------
+    // Note: Require implies Enable, but setting both here makes it easier to bypass the strategy on some models that defaults to a software encoder.
     CFMutableDictionaryRef spec = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
                                                             &kCFTypeDictionaryKeyCallBacks,
                                                             &kCFTypeDictionaryValueCallBacks);
-    #if TARGET_OS_MAC
-        // Specify that we require a hardware-accelerated video encoder
-        CFDictionarySetValue(spec, kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
-    #endif
+    if (!spec) {
+        return 0;  // Memory allocation failed
+    }
+    
+    CFDictionarySetValue(spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
+    CFDictionarySetValue(spec, kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
 
-    CMVideoCodecType codecType = h265 ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
     CFDictionaryRef properties = NULL;
     CFStringRef outID = NULL;
-    OSStatus result = VTCopySupportedPropertyDictionaryForEncoder(1920, 1080, codecType, spec, &outID, &properties);
 
-    CFRelease(spec); // Clean up the specification dictionary
+    // Use 1280x720 for capability detection to reduce the probability of "no hardware encoding" due to resolution/level issues.
+    OSStatus result = VTCopySupportedPropertyDictionaryForEncoder(1280, 720, codecType, spec, &outID, &properties);
 
-    if (result == kVTCouldNotFindVideoEncoderErr) {
-        return 0; // No hardware encoder found
+    if (properties) CFRelease(properties);
+    if (outID) CFRelease(outID);
+    CFRelease(spec);  // Already checked for non-NULL above
+
+    if (result == noErr) {
+        // Explicitly found an encoder that meets the "hardware-only" specification.
+        return 1;
+    }
+    // Reaching here means either no encoder satisfying Require was found (common), or another error occurred.
+    // For all failure cases, continue with the safer "session-level confirmation" path to avoid misjudgment.
+
+    // ---------- Path B: Create Session and Read UsingHardwareAcceleratedVideoEncoder ----------
+    CFMutableDictionaryRef enableOnly = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                                                  &kCFTypeDictionaryKeyCallBacks,
+                                                                  &kCFTypeDictionaryValueCallBacks);
+    if (!enableOnly) {
+        return 0;  // Memory allocation failed
+    }
+    
+    CFDictionarySetValue(enableOnly, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
+
+    VTCompressionSessionRef session = NULL;
+    // Also use 1280x720 to reduce profile/level interference
+    OSStatus st = VTCompressionSessionCreate(kCFAllocatorDefault,
+                                             1280, 720, codecType,
+                                             enableOnly,      /* encoderSpecification */
+                                             NULL,            /* sourceImageBufferAttributes */
+                                             NULL,            /* compressedDataAllocator */
+                                             NULL,            /* outputCallback */
+                                             NULL,            /* outputRefCon */
+                                             &session);
+    CFRelease(enableOnly);  // Already checked for non-NULL above
+
+    if (st != noErr || !session) {
+        // Creation failed, considered no hardware available.
+        return 0;
     }
 
-    if (properties != NULL) {
-        CFRelease(properties);
-    }
-    if (outID != NULL) {
-        CFRelease(outID);
+    // First, explicitly prepare the encoding process to give VideoToolbox a chance to choose between software/hardware.
+    OSStatus prepareStatus = VTCompressionSessionPrepareToEncodeFrames(session);
+    if (prepareStatus != noErr) {
+        VTCompressionSessionInvalidate(session);
+        CFRelease(session);
+        return 0;
     }
 
-    return result == noErr ? 1 : 0;
+    // Query the session's read-only property: whether it is using a hardware encoder.
+    CFBooleanRef usingHW = NULL;
+    st = VTSessionCopyProperty(session,
+                               kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
+                               kCFAllocatorDefault,
+                               (void **)&usingHW);
+
+    Boolean isHW = (st == noErr && usingHW && CFBooleanGetValue(usingHW));
+
+    if (usingHW) CFRelease(usingHW);
+    VTCompressionSessionInvalidate(session);
+    CFRelease(session);
+
+    return isHW ? 1 : 0;
 }
 
+// -------------- Your Public Interface: Unchanged ------------------
 extern "C" void checkVideoToolboxSupport(int32_t *h264Encoder, int32_t *h265Encoder, int32_t *h264Decoder, int32_t *h265Decoder) {
     // https://stackoverflow.com/questions/50956097/determine-if-ios-device-can-support-hevc-encoding
-    *h264Encoder = hasHardwareEncoder(false);
+    *h264Encoder = 0; // The project only cares about HEVC, so it's directly marked as unsupported to avoid extra detection.
     *h265Encoder = hasHardwareEncoder(true);
-    // *h265Encoder = [[AVAssetExportSession allExportPresets] containsObject:@"AVAssetExportPresetHEVCHighestQuality"];
 
     *h264Decoder = VTIsHardwareDecodeSupported(kCMVideoCodecType_H264);
     *h265Decoder = VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC);
@@ -61,7 +117,7 @@ extern "C" uint64_t GetHwcodecGpuSignature() {
     int32_t h265Decoder = 0;
     checkVideoToolboxSupport(&h264Encoder, &h265Encoder, &h264Decoder, &h265Decoder);
     return (uint64_t)h264Encoder << 24 | (uint64_t)h265Encoder << 16 | (uint64_t)h264Decoder << 8 | (uint64_t)h265Decoder;
-}   
+}
 
 static void *parent_death_monitor_thread(void *arg) {
   int kq = (intptr_t)arg;
@@ -116,4 +172,3 @@ extern "C" int setup_parent_death_signal() {
     return 0;
   }
 }
-
