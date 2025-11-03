@@ -19,21 +19,6 @@
 static int32_t hasHardwareEncoder(bool h265) {
     CMVideoCodecType codecType = h265 ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
 
-    // On older systems, HEVC hardware encoding is unavailable; reject quickly to avoid unnecessary calls.
-#if defined(__APPLE__)
-    if (h265) {
-    #if __has_builtin(__builtin_available)
-        if (@available(macOS 10.13, *)) {
-            // macOS 10.13 and above can continue detection
-        } else {
-            return 0;
-        }
-    #else
-        return 0;
-    #endif
-    }
-#endif
-
     // ---------- Path A: Quick Query with Enable + Require ----------
     // Note: Require implies Enable, but setting both here makes it easier to bypass the strategy on some models that default to a software encoder.
     CFMutableDictionaryRef spec = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
@@ -109,7 +94,7 @@ static int32_t hasHardwareEncoder(bool h265) {
 // -------------- Your Public Interface: Unchanged ------------------
 extern "C" void checkVideoToolboxSupport(int32_t *h264Encoder, int32_t *h265Encoder, int32_t *h264Decoder, int32_t *h265Decoder) {
     // https://stackoverflow.com/questions/50956097/determine-if-ios-device-can-support-hevc-encoding
-    *h264Encoder = 0; //  H.264 encoder support is disabled due to frequent reliability issues (see encode.rs)
+    *h264Encoder = 0; // H.264 encoder support is disabled due to frequent reliability issues (see encode.rs)
     *h265Encoder = hasHardwareEncoder(true);
 
     *h264Decoder = VTIsHardwareDecodeSupported(kCMVideoCodecType_H264);

@@ -321,7 +321,12 @@ impl Encoder {
                         let mut passed = false;
                         let mut last_err: Option<i32> = None;
 
-                        for attempt in 0..3 {
+                        let max_attempts = if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+                            3
+                        } else {
+                            1
+                        };
+                        for attempt in 0..max_attempts {
                             let pts = (attempt as i64) * 33; // 33ms is an approximation for 30 FPS (1000 / 30)
                             let start = std::time::Instant::now();
                             match encoder.encode(&yuv, pts) {
