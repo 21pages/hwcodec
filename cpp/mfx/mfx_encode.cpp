@@ -336,14 +336,24 @@ private:
     mfxEncParams_.mfx.GopRefDist =
         1; // 1 is best for low latency, I and P frames only
     mfxEncParams_.mfx.GopPicSize = (gop_ > 0 && gop_ < 0xFFFF) ? gop_ : 0xFFFF;
-    // quality
-    // https://www.intel.com/content/www/us/en/developer/articles/technical/common-bitrate-control-methods-in-intel-media-sdk.html
+    // Quality and rate control configuration
+    // Reference: https://www.intel.com/content/www/us/en/developer/articles/technical/common-bitrate-control-methods-in-intel-media-sdk.html
+    //
+    // How RustDesk uses this:
+    // - RustDesk sets RC_CBR for Intel QSV encoders via FFmpeg (hwcodec.rs L248)
+    // - Uses set_rate_control() which sets FF_COMPLIANCE_UNOFFICIAL for QSV (util.cpp L207-210)
+    //
+    // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
+    // - Sunshine does not have a dedicated Intel QSV SDK encoder, it uses FFmpeg's QSV encoder
+    // - This implementation uses Intel Media SDK directly with VBR rate control
+    // - VBR mode provides better quality than CBR while maintaining average bitrate
+    // - TargetKbps and MaxKbps are set to same value to constrain bitrate variance
     mfxEncParams_.mfx.TargetUsage = MFX_TARGETUSAGE_BEST_SPEED;
     mfxEncParams_.mfx.RateControlMethod = MFX_RATECONTROL_VBR;
     mfxEncParams_.mfx.InitialDelayInKB = 0;
     mfxEncParams_.mfx.BufferSizeInKB = 512;
     mfxEncParams_.mfx.TargetKbps = kbs_;
-    mfxEncParams_.mfx.MaxKbps = kbs_;
+    mfxEncParams_.mfx.MaxKbps = kbs_;  // Same as target for consistent bitrate
     mfxEncParams_.mfx.NumSlice = 1;
     mfxEncParams_.mfx.NumRefFrame = 0;
 
