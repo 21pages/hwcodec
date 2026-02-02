@@ -41,16 +41,23 @@ enum Vendor {
 enum Quality { Quality_Default, Quality_High, Quality_Medium, Quality_Low };
 
 // Rate control modes for video encoding
+//
+// How RustDesk uses this library (https://github.com/21pages/rustdesk):
+// - RustDesk primarily uses RC_CBR for most platforms (libs/scrap/src/common/hwcodec.rs L248, L694)
+// - Exception: Android MediaCodec uses RC_VBR (hwcodec.rs L246)
+// - Rate control is set via EncodeContext.rc parameter passed to hwcodec encoder
+// - Dynamic bitrate changes are handled via set_bitrate() method based on quality ratio
+//
 // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
 // - Sunshine uses encoder-specific rate control constants directly in encoder configurations
 //   (e.g., NV_ENC_PARAMS_RC_CBR for NVENC, VA_RC_CBR/VA_RC_VBR for VAAPI)
 // - This implementation uses a unified enum that is mapped to encoder-specific values in set_rate_control()
-// - Both implementations primarily use CBR for low-latency streaming
+// - Both RustDesk and Sunshine primarily use CBR for low-latency streaming
 // - Sunshine additionally supports CQP (Constant QP) mode for VAAPI when other RC modes are unavailable
 enum RateControl {
   RC_DEFAULT,  // Default rate control (encoder-specific)
-  RC_CBR,      // Constant Bitrate - same as Sunshine's primary mode for streaming
-  RC_VBR,      // Variable Bitrate - supported but less common for low-latency use
+  RC_CBR,      // Constant Bitrate - RustDesk's primary mode, same as Sunshine's approach
+  RC_VBR,      // Variable Bitrate - used by RustDesk for Android MediaCodec
   RC_CQ,       // Constant Quality - similar to Sunshine's CQP mode
 };
 

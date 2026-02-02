@@ -143,6 +143,11 @@ public:
         NV_ENC_TUNING_INFO_LOW_LATENCY);
 
     // Low-latency encoding configuration
+    //
+    // How RustDesk uses this:
+    // - RustDesk initializes encoder with DEFAULT_FPS=30, DEFAULT_GOP=i32::MAX
+    // - Low-latency is critical for remote desktop streaming use case
+    //
     // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
     // - Sunshine uses similar low-latency settings:
     //   - frameIntervalP = 1 (src/nvenc/nvenc_base.cpp L243)
@@ -155,6 +160,12 @@ public:
     initializeParams.encodeConfig->rcParams.lookaheadDepth = 0;
 
     // bitrate - convert from kbps to bps
+    //
+    // How RustDesk uses this:
+    // - Bitrate is calculated dynamically based on resolution and quality ratio
+    // - Uses base_bitrate(width, height) * quality_ratio * factor (hwcodec.rs L251-279)
+    // - Dynamic bitrate adjustment via set_bitrate() for quality changes (hwcodec.rs L182)
+    //
     // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
     // - Both multiply kbps by 1000 to get bits per second
     // - Sunshine: src/nvenc/nvenc_base.cpp L253: averageBitRate = client_config.bitrate * 1000
@@ -166,6 +177,11 @@ public:
     initializeParams.encodeConfig->gopLength =
         (gop_ > 0 && gop_ < MAX_GOP) ? gop_ : NVENC_INFINITE_GOPLENGTH;
     // Rate control method: Constant Bitrate (CBR)
+    //
+    // How RustDesk uses this:
+    // - RustDesk sets RC_CBR for all platforms except Android MediaCodec (hwcodec.rs L248)
+    // - Ensures consistent bitrate for network streaming in remote desktop scenarios
+    //
     // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
     // - Both use NV_ENC_PARAMS_RC_CBR for low-latency streaming
     // - Sunshine: src/nvenc/nvenc_base.cpp L244: rateControlMode = NV_ENC_PARAMS_RC_CBR

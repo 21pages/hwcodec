@@ -203,6 +203,12 @@ struct CodecOptions {
 };
 
 // Set rate control mode for FFmpeg-based encoders
+//
+// How RustDesk uses this (https://github.com/21pages/rustdesk):
+// - Called from EncodeContext initialization (libs/scrap/src/common/hwcodec.rs L83, L137)
+// - RC_CBR is the default for most platforms
+// - Android MediaCodec uses RC_VBR for better quality on mobile devices
+//
 // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
 // - Sunshine sets rate control directly in encoder-specific code (src/video.cpp, src/nvenc/nvenc_base.cpp)
 // - This function provides a unified interface that maps generic RC modes to encoder-specific options
@@ -215,12 +221,14 @@ bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
     c->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
   }
   // Rate control option mapping for different encoders
+  //
   // Comparison with Sunshine:
   // - NVENC: Both use "rc" option with "cbr"/"vbr" values (Sunshine: src/video.cpp L548, L569, L595)
   // - AMF: Both support CBR. This impl uses "vbr_latency" for VBR, while Sunshine uses numeric constants
   //   (Sunshine defines: AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD_CBR = 1, 
   //    AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD_LATENCY_CONSTRAINED_VBR = 3 in src/config.cpp L90-92)
   // - MediaCodec: This impl supports cbr/vbr/cq modes via "bitrate_mode" option
+  //   RustDesk uses VBR for Android MediaCodec (hwcodec.rs L246)
   std::vector<CodecOptions> codecs = {
       {"nvenc", "rc", {{RC_CBR, "cbr"}, {RC_VBR, "vbr"}}},
       {"amf", "rc", {{RC_CBR, "cbr"}, {RC_VBR, "vbr_latency"}}},
@@ -245,6 +253,11 @@ bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
           if (rc == RC_CQ) {
             // Set quantization parameter for constant quality mode
             // Range: 0-51, where lower values mean higher quality
+            //
+            // How RustDesk uses this:
+            // - RustDesk uses RC_VBR for MediaCodec on Android (hwcodec.rs L246)
+            // - CQ mode is available but not currently used by RustDesk
+            //
             // Sunshine uses similar CQP mode for VAAPI (src/platform/linux/vaapi.cpp L296, L300)
             if (q >= 0 && q <= 51) {
               c->global_quality = q;

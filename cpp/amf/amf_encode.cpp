@@ -260,6 +260,11 @@ private:
       AMF_CHECK_RETURN(res,
                        "SetProperty(AMF_VIDEO_ENCODER_COLOR_BIT_DEPTH  failed");
       // Rate control method: Constant Bitrate (CBR)
+      //
+      // How RustDesk uses this:
+      // - RustDesk sets RC_CBR for AMF encoders (hwcodec.rs L248)
+      // - Used via FFmpeg's AMF encoder with "rc"="cbr" option mapping (util.cpp L213)
+      //
       // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
       // - Sunshine defines AMF rate control constants in src/config.cpp L89-92:
       //   AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD_CONSTANT_QP = 0
@@ -358,6 +363,11 @@ private:
           res, "SetProperty AMF_VIDEO_ENCODER_HEVC_COLOR_BIT_DEPTH failed");
 
       // Rate control method for HEVC: Constant Bitrate (CBR)
+      //
+      // How RustDesk uses this:
+      // - RustDesk sets RC_CBR for AMF HEVC encoders (hwcodec.rs L248)
+      // - Used via FFmpeg's AMF HEVC encoder with "rc"="cbr" option
+      //
       // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
       // - Sunshine defines HEVC-specific AMF rate control constants in src/config.cpp L85-88:
       //   AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_CONSTANT_QP = 0

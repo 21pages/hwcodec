@@ -135,6 +135,11 @@ public:
     }
     // util_encode::set_quality(c_->priv_data, encoder_->name_, Quality_Default);
     // Set rate control to CBR (Constant Bitrate)
+    //
+    // How RustDesk uses this:
+    // - RustDesk calls this during encoder initialization (hwcodec.rs L83, L137)
+    // - RC_CBR is used for all VRAM encoders to ensure consistent streaming quality
+    //
     // This uses the unified set_rate_control() function in util.cpp which maps
     // RC_CBR to encoder-specific settings (see comparison comments in util.cpp)
     util_encode::set_rate_control(c_, encoder_->name_, RC_CBR, -1);

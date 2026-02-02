@@ -338,6 +338,11 @@ private:
     mfxEncParams_.mfx.GopPicSize = (gop_ > 0 && gop_ < 0xFFFF) ? gop_ : 0xFFFF;
     // Quality and rate control configuration
     // Reference: https://www.intel.com/content/www/us/en/developer/articles/technical/common-bitrate-control-methods-in-intel-media-sdk.html
+    //
+    // How RustDesk uses this:
+    // - RustDesk sets RC_CBR for Intel QSV encoders via FFmpeg (hwcodec.rs L248)
+    // - Uses set_rate_control() which sets FF_COMPLIANCE_UNOFFICIAL for QSV (util.cpp L207-210)
+    //
     // Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
     // - Sunshine does not have a dedicated Intel QSV SDK encoder, it uses FFmpeg's QSV encoder
     // - This implementation uses Intel Media SDK directly with VBR rate control
