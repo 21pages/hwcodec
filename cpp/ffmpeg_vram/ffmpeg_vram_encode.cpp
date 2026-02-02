@@ -134,6 +134,9 @@ public:
       return false;
     }
     // util_encode::set_quality(c_->priv_data, encoder_->name_, Quality_Default);
+    // Set rate control to CBR (Constant Bitrate)
+    // This uses the unified set_rate_control() function in util.cpp which maps
+    // RC_CBR to encoder-specific settings (see comparison comments in util.cpp)
     util_encode::set_rate_control(c_, encoder_->name_, RC_CBR, -1);
     util_encode::set_others(c_->priv_data, encoder_->name_);
 

@@ -40,11 +40,18 @@ enum Vendor {
 
 enum Quality { Quality_Default, Quality_High, Quality_Medium, Quality_Low };
 
+// Rate control modes for video encoding
+// Comparison with Sunshine (https://github.com/LizardByte/Sunshine):
+// - Sunshine uses encoder-specific rate control constants directly in encoder configurations
+//   (e.g., NV_ENC_PARAMS_RC_CBR for NVENC, VA_RC_CBR/VA_RC_VBR for VAAPI)
+// - This implementation uses a unified enum that is mapped to encoder-specific values in set_rate_control()
+// - Both implementations primarily use CBR for low-latency streaming
+// - Sunshine additionally supports CQP (Constant QP) mode for VAAPI when other RC modes are unavailable
 enum RateControl {
-  RC_DEFAULT,
-  RC_CBR,
-  RC_VBR,
-  RC_CQ,
+  RC_DEFAULT,  // Default rate control (encoder-specific)
+  RC_CBR,      // Constant Bitrate - same as Sunshine's primary mode for streaming
+  RC_VBR,      // Variable Bitrate - supported but less common for low-latency use
+  RC_CQ,       // Constant Quality - similar to Sunshine's CQP mode
 };
 
 enum HwcodecErrno {
