@@ -17,6 +17,7 @@
 
 // ---------------------- Core: More Robust Hardware Encoder Detection ----------------------
 static int32_t hasHardwareEncoder(bool h265) {
+    LOG_INFO(std::string("hasHardwareEncoder: checking ") + (h265 ? "H265" : "H264"));
     CMVideoCodecType codecType = h265 ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
 
     // ---------- Path A: Quick Query with Enable + Require ----------
@@ -32,6 +33,7 @@ static int32_t hasHardwareEncoder(bool h265) {
 
     // Use 1280x720 for capability detection to reduce the probability of "no hardware encoding" due to resolution/level issues.
     OSStatus result = VTCopySupportedPropertyDictionaryForEncoder(1280, 720, codecType, spec, &outID, &properties);
+    LOG_INFO("hasHardwareEncoder: Path A VTCopySupportedPropertyDictionaryForEncoder result=" + std::to_string(result));
 
     if (properties) CFRelease(properties);
     if (outID) CFRelease(outID);
@@ -39,12 +41,14 @@ static int32_t hasHardwareEncoder(bool h265) {
 
     if (result == noErr) {
         // Explicitly found an encoder that meets the "hardware-only" specification.
+        LOG_INFO("hasHardwareEncoder: Path A succeeded, returning 1");
         return 1;
     }
     // Reaching here means either no encoder satisfying Require was found (common), or another error occurred.
     // For all failure cases, continue with the safer "session-level confirmation" path to avoid misjudgment.
 
     // ---------- Path B: Create Session and Read UsingHardwareAcceleratedVideoEncoder ----------
+    LOG_INFO("hasHardwareEncoder: Path A failed, trying Path B");
     CFMutableDictionaryRef enableOnly = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
                                                                   &kCFTypeDictionaryKeyCallBacks,
                                                                   &kCFTypeDictionaryValueCallBacks);
@@ -64,16 +68,20 @@ static int32_t hasHardwareEncoder(bool h265) {
 
     if (st != noErr || !session) {
         // Creation failed, considered no hardware available.
+        LOG_INFO("hasHardwareEncoder: VTCompressionSessionCreate failed, st=" + std::to_string(st));
         return 0;
     }
+    LOG_INFO("hasHardwareEncoder: VTCompressionSessionCreate succeeded");
 
     // First, explicitly prepare the encoding process to give VideoToolbox a chance to choose between software/hardware.
     OSStatus prepareStatus = VTCompressionSessionPrepareToEncodeFrames(session);
     if (prepareStatus != noErr) {
+        LOG_INFO("hasHardwareEncoder: VTCompressionSessionPrepareToEncodeFrames failed, prepareStatus=" + std::to_string(prepareStatus));
         VTCompressionSessionInvalidate(session);
         CFRelease(session);
         return 0;
     }
+    LOG_INFO("hasHardwareEncoder: VTCompressionSessionPrepareToEncodeFrames succeeded");
 
     // Query the session's read-only property: whether it is using a hardware encoder.
     CFBooleanRef usingHW = NULL;
@@ -83,11 +91,13 @@ static int32_t hasHardwareEncoder(bool h265) {
                                (void **)&usingHW);
 
     Boolean isHW = (st == noErr && usingHW && CFBooleanGetValue(usingHW));
+    LOG_INFO("hasHardwareEncoder: VTSessionCopyProperty st=" + std::to_string(st) + ", isHW=" + std::to_string(isHW));
 
     if (usingHW) CFRelease(usingHW);
     VTCompressionSessionInvalidate(session);
     CFRelease(session);
 
+    LOG_INFO("hasHardwareEncoder: returning " + std::to_string(isHW ? 1 : 0));
     return isHW ? 1 : 0;
 }
 
