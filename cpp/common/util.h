@@ -12,7 +12,6 @@ namespace util_encode {
 void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
                       int gop, int fps);
 bool set_lantency_free(void *priv_data, const std::string &name);
-bool set_quality(void *priv_data, const std::string &name, int quality);
 bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
                       int q);
 bool set_gpu(void *priv_data, const std::string &name, int gpu);

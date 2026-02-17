@@ -235,7 +235,6 @@ public:
       LOG_ERROR(std::string("set_lantency_free failed, name: ") + name_);
       return false;
     }
-    // util_encode::set_quality(c_->priv_data, name_, quality_);
     util_encode::set_rate_control(c_, name_, rc_, q_);
     util_encode::set_gpu(c_->priv_data, name_, gpu_);
     util_encode::force_hw(c_->priv_data, name_);

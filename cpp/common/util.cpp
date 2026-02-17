@@ -17,6 +17,13 @@ extern "C" {
 
 namespace util_encode {
 
+static int64_t calc_qsv_max_rate(int64_t bit_rate) {
+  // Keep both relative and absolute headroom for VBR burst allocation.
+  const int64_t by_ratio = (bit_rate * 3) / 2;
+  const int64_t by_offset = bit_rate + 500000;
+  return by_ratio > by_offset ? by_ratio : by_offset;
+}
+
 void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
                       int gop, int fps) {
   c->has_b_frames = 0;
@@ -36,8 +43,8 @@ void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
   if (kbs > 0) {
     c->bit_rate = kbs * 1000;
     if (name.find("qsv") != std::string::npos) {
-      c->rc_max_rate = c->bit_rate;
-      c->bit_rate--; // cbr with vbr
+      // For QSV VBR, keep bitrate headroom to preserve detail in motion/scrolling scenes at low target bitrate.
+      c->rc_max_rate = calc_qsv_max_rate(c->bit_rate);
     }
   }
   /* frames per second */
@@ -97,100 +104,6 @@ bool set_lantency_free(void *priv_data, const std::string &name) {
     if ((ret = av_opt_set_int(priv_data, "prio_speed", 1, 0)) < 0) {
       LOG_ERROR(std::string("videotoolbox set prio_speed failed, ret = ") + av_err2str(ret));
       return false;
-    }
-  }
-  return true;
-}
-
-bool set_quality(void *priv_data, const std::string &name, int quality) {
-  int ret = -1;
-
-  if (name.find("nvenc") != std::string::npos) {
-    switch (quality) {
-    // p7 isn't zero lantency
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "preset", "p4", 0)) < 0) {
-        LOG_ERROR(std::string("nvenc set opt preset p4 failed, ret = ") + av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "preset", "p1", 0)) < 0) {
-        LOG_ERROR(std::string("nvenc set opt preset p1 failed, ret = ") + av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("amf") != std::string::npos) {
-    switch (quality) {
-    case Quality_High:
-      if ((ret = av_opt_set(priv_data, "quality", "quality", 0)) < 0) {
-        LOG_ERROR(std::string("amf set opt quality quality failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "quality", "balanced", 0)) < 0) {
-        LOG_ERROR(std::string("amf set opt quality balanced failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "quality", "speed", 0)) < 0) {
-        LOG_ERROR(std::string("amf set opt quality speed failed, ret = ") + av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("qsv") != std::string::npos) {
-    switch (quality) {
-    case Quality_High:
-      if ((ret = av_opt_set(priv_data, "preset", "veryslow", 0)) < 0) {
-        LOG_ERROR(std::string("qsv set opt preset veryslow failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Medium:
-      if ((ret = av_opt_set(priv_data, "preset", "medium", 0)) < 0) {
-        LOG_ERROR(std::string("qsv set opt preset medium failed, ret = ") + av_err2str(ret));
-        return false;
-      }
-      break;
-    case Quality_Low:
-      if ((ret = av_opt_set(priv_data, "preset", "veryfast", 0)) < 0) {
-        LOG_ERROR(std::string("qsv set opt preset veryfast failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  if (name.find("mediacodec") != std::string::npos) {
-    if (name.find("h264") != std::string::npos) {
-      if ((ret = av_opt_set(priv_data, "level", "5.1", 0)) < 0) {
-        LOG_ERROR(std::string("mediacodec set opt level 5.1 failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
-    }
-    if (name.find("hevc") != std::string::npos) {
-      // https:en.wikipedia.org/wiki/High_Efficiency_Video_Coding_tiers_and_levels
-      if ((ret = av_opt_set(priv_data, "level", "h5.1", 0)) < 0) {
-        LOG_ERROR(std::string("mediacodec set opt level h5.1 failed, ret = ") +
-                  av_err2str(ret));
-        return false;
-      }
     }
   }
   return true;
@@ -291,14 +204,37 @@ bool set_others(void *priv_data, const std::string &name) {
       return false;
     }
   }
+  if (name.find("qsv") != std::string::npos) {
+    struct QsvOpt {
+      const char *name;
+      int64_t value;
+    };
+    // Explicitly set screen-remoting oriented knobs. Keep no B-frame path for 1 in -> 1 out.
+    const QsvOpt qsv_opts[] = {
+        {"preset", 5},             // QSV TargetUsage=5 (fast): better quality than veryfast with low extra latency.
+        {"scenario", 1},           // MFX_SCENARIO_DISPLAY_REMOTING: optimize for desktop/text/UI content.
+        {"mbbrc", 1},              // Enable macroblock-level bitrate control for better local detail allocation.
+        {"extbrc", 1},             // Enable extended bitrate control for more stable quality under bandwidth changes.
+        {"adaptive_i", 1},         // Enable adaptive I-frame placement for scene/content changes.
+        {"adaptive_b", 0},         // Disable adaptive B-frames to avoid reorder-latency risk.
+        {"b_strategy", 0},         // Disable B-frame strategy (keep 1 in -> 1 out behavior).
+    };
+    for (const auto &opt : qsv_opts) {
+      ret = av_opt_set_int(priv_data, opt.name, opt.value, 0);
+      if (ret < 0) {
+        LOG_WARN(std::string("qsv set opt ") + opt.name + "=" +
+                 std::to_string(opt.value) + " failed, ret = " + av_err2str(ret));
+      }
+    }
+  }
   return true;
 }
-
 bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs) {
   if (kbs > 0) {
     c->bit_rate = kbs * 1000;
     if (name.find("qsv") != std::string::npos) {
-      c->rc_max_rate = c->bit_rate;
+      // For QSV VBR, keep bitrate headroom to preserve detail in motion/scrolling scenes at low target bitrate.
+      c->rc_max_rate = calc_qsv_max_rate(c->bit_rate);
     }
   }
   return true;

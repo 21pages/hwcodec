@@ -133,7 +133,6 @@ public:
     if (!util_encode::set_lantency_free(c_->priv_data, encoder_->name_)) {
       return false;
     }
-    // util_encode::set_quality(c_->priv_data, encoder_->name_, Quality_Default);
     util_encode::set_rate_control(c_, encoder_->name_, RC_CBR, -1);
     util_encode::set_others(c_->priv_data, encoder_->name_);
 
