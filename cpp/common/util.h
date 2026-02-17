@@ -9,16 +9,16 @@ extern "C" {
 
 namespace util_encode {
 
-void set_av_codec_ctx(AVCodecContext *c, const std::string &name, int kbs,
+void set_av_codec_ctx(AVCodecContext *c, const std::string &name,
                       int gop, int fps);
 bool set_lantency_free(void *priv_data, const std::string &name);
-bool set_quality(void *priv_data, const std::string &name, int quality);
 bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
-                      int q);
+                      int kbs, int qp, int qp_min, int qp_max);
 bool set_gpu(void *priv_data, const std::string &name, int gpu);
 bool force_hw(void *priv_data, const std::string &name);
-bool set_others(void *priv_data, const std::string &name);
 
+bool is_using_cqp(const std::string &name, AVCodecContext *c);
+bool change_qp(AVCodecContext *c, const std::string &name, int qp, int qp_min, int qp_max);
 bool change_bit_rate(AVCodecContext *c, const std::string &name, int kbs);
 void vram_encode_test_callback(const uint8_t *data, int32_t len, int32_t key, const void *obj, int64_t pts);
 

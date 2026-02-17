@@ -72,13 +72,17 @@ public:
   int32_t kbs_;
   int32_t framerate_;
   int32_t gop_;
+  int32_t rc_;
+  int32_t qp_;
+  int32_t qp_min_;
+  int32_t qp_max_;
   bool full_range_ = false;
   bool bt709_ = false;
   NV_ENC_CONFIG encodeConfig_ = {0};
 
   NvencEncoder(void *handle, int64_t luid, DataFormat dataFormat,
                int32_t width, int32_t height, int32_t kbs, int32_t framerate,
-               int32_t gop) {
+               int32_t gop, int32_t rc, int32_t qp, int32_t qp_min, int32_t qp_max) {
     handle_ = handle;
     luid_ = luid;
     dataFormat_ = dataFormat;
@@ -87,6 +91,10 @@ public:
     kbs_ = kbs;
     framerate_ = framerate;
     gop_ = gop;
+    rc_ = rc;
+    qp_ = qp;
+    qp_min_ = qp_min;
+    qp_max_ = qp_max;
 
     load_driver(&cuda_dl_, &nvenc_dl_);
   }
@@ -146,8 +154,6 @@ public:
     initializeParams.encodeConfig->frameIntervalP = 1;
     initializeParams.encodeConfig->rcParams.lookaheadDepth = 0;
 
-    // bitrate
-    initializeParams.encodeConfig->rcParams.averageBitRate = kbs_ * 1000;
     // framerate
     initializeParams.frameRateNum = framerate_;
     initializeParams.frameRateDen = 1;
@@ -155,8 +161,19 @@ public:
     initializeParams.encodeConfig->gopLength =
         (gop_ > 0 && gop_ < MAX_GOP) ? gop_ : NVENC_INFINITE_GOPLENGTH;
     // rc method
-    initializeParams.encodeConfig->rcParams.rateControlMode =
-        NV_ENC_PARAMS_RC_CBR;
+    if (rc_ == RC_CQP) {
+      if (qp_ <= 0) qp_ = DEFAULT_QP;
+      initializeParams.encodeConfig->rcParams.rateControlMode =
+          NV_ENC_PARAMS_RC_CONSTQP;
+      initializeParams.encodeConfig->rcParams.constQP.qpInterP = qp_;
+      initializeParams.encodeConfig->rcParams.constQP.qpIntra = qp_;
+      initializeParams.encodeConfig->rcParams.constQP.qpInterB = qp_;
+    } else {
+      if (kbs_ <= 0) kbs_ = DEFAULT_KBS;
+      initializeParams.encodeConfig->rcParams.averageBitRate = kbs_ * 1000;
+      initializeParams.encodeConfig->rcParams.rateControlMode =
+          (rc_ == RC_VBR) ? NV_ENC_PARAMS_RC_VBR : NV_ENC_PARAMS_RC_CBR;
+    }
     // color
     if (dataFormat_ == H264) {
       setup_h264(initializeParams.encodeConfig);
@@ -338,11 +355,12 @@ int nv_destroy_encoder(void *encoder) {
 
 void *nv_new_encoder(void *handle, int64_t luid, DataFormat dataFormat,
                      int32_t width, int32_t height, int32_t kbs,
-                     int32_t framerate, int32_t gop) {
+                     int32_t framerate, int32_t gop,
+                     int32_t rc, int32_t qp, int32_t qp_min, int32_t qp_max) {
   NvencEncoder *e = NULL;
   try {
     e = new NvencEncoder(handle, luid, dataFormat, width, height, kbs,
-                         framerate, gop);
+                         framerate, gop, rc, qp, qp_min, qp_max);
     if (!e->init()) {
       goto _exit;
     }
@@ -392,7 +410,8 @@ int nv_encode(void *encoder, void *texture, EncodeCallback callback, void *obj,
 int nv_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum, int32_t *outDescNum,
                    DataFormat dataFormat, int32_t width,
                    int32_t height, int32_t kbs, int32_t framerate,
-                   int32_t gop, const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
+                   int32_t gop, int32_t rc, int32_t qp, int32_t qp_min, int32_t qp_max,
+                   const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
   try {
     Adapters adapters;
     if (!adapters.Init(ADAPTER_VENDOR_NVIDIA))
@@ -406,7 +425,7 @@ int nv_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum, i
 
       NvencEncoder *e = (NvencEncoder *)nv_new_encoder(
           (void *)adapter.get()->device_.Get(), currentLuid,
-          dataFormat, width, height, kbs, framerate, gop);
+          dataFormat, width, height, kbs, framerate, gop, rc, qp, qp_min, qp_max);
       if (!e)
         continue;
       if (e->native_->EnsureTexture(e->width_, e->height_)) {
@@ -446,6 +465,22 @@ int nv_set_bitrate(void *e, int32_t kbs) {
   } catch (const std::exception &e) {
     LOG_ERROR(std::string("set bitrate to ") + std::to_string(kbs) +
               "k failed: " + e.what());
+  }
+  return -1;
+}
+
+int nv_set_qp(void *e, int32_t qp, int32_t qp_min, int32_t qp_max) {
+  (void)qp_min;
+  (void)qp_max;
+  try {
+    RECONFIGURE_HEAD
+    params.reInitEncodeParams.encodeConfig->rcParams.constQP.qpInterP = qp;
+    params.reInitEncodeParams.encodeConfig->rcParams.constQP.qpIntra = qp;
+    params.reInitEncodeParams.encodeConfig->rcParams.constQP.qpInterB = qp;
+    RECONFIGURE_TAIL
+  } catch (const std::exception &e) {
+    LOG_ERROR(std::string("set qp to ") + std::to_string(qp) +
+              " failed: " + e.what());
   }
   return -1;
 }
