@@ -28,7 +28,8 @@ using namespace DirectX;
 class NativeDevice {
 public:
   bool Init(int64_t luid, ID3D11Device *device, int pool_size = 1);
-  bool EnsureTexture(int width, int height);
+  bool EnsureTexture(int width, int height,
+                     DXGI_FORMAT format = DXGI_FORMAT_B8G8R8A8_UNORM);
   bool SetTexture(ID3D11Texture2D *texture);
   HANDLE GetSharedHandle();
   ID3D11Texture2D *GetCurrentTexture();
@@ -40,13 +41,19 @@ public:
                D3D11_VIDEO_PROCESSOR_CONTENT_DESC content_desc,
                DXGI_COLOR_SPACE_TYPE colorSpace_in,
                DXGI_COLOR_SPACE_TYPE colorSpace_out, int arraySlice);
+  bool RgbToYuv(ID3D11Texture2D *rgbTexture, ID3D11Texture2D *yuvTexture,
+                int width, int height, DXGI_COLOR_SPACE_TYPE colorSpace_in,
+                DXGI_COLOR_SPACE_TYPE colorSpace_out);
+  bool ScRgbToYuv(ID3D11Texture2D *rgbTexture, ID3D11Texture2D *yuvTexture,
+                  int width, int height, bool hdrOutput,
+                  int outputArraySlice);
   bool BgraToNv12(ID3D11Texture2D *bgraTexture, ID3D11Texture2D *nv12Texture,
                   int width, int height, DXGI_COLOR_SPACE_TYPE colorSpace_in,
                   DXGI_COLOR_SPACE_TYPE colorSpace_outt);
   bool Nv12ToBgra(int width, int height, ID3D11Texture2D *nv12Texture,
                   ID3D11Texture2D *bgraTexture, int nv12ArrayIndex);
   AdapterVendor GetVendor();
-  bool support_decode(DataFormat format);
+  bool support_decode(DataFormat format, int bitDepth = 8);
 
 private:
   bool InitFromLuid(int64_t luid);
@@ -67,6 +74,7 @@ private:
   bool nv12_to_bgra_set_shader();
   bool nv12_to_bgra_set_vertex_buffer();
   bool nv12_to_bgra_draw();
+  bool sc_rgb_to_yuv_init();
 
 public:
   // Direct3D 11
@@ -89,6 +97,15 @@ public:
   ComPtr<ID3D11PixelShader> pixelShader_ = NULL;
   ComPtr<ID3D11SamplerState> samplerLinear_ = NULL;
   ComPtr<ID3D11Texture2D> nv12SrvTexture_ = nullptr;
+
+  ComPtr<ID3D11VertexShader> scRgbVertexShader_ = nullptr;
+  ComPtr<ID3D11PixelShader> scRgbPixelShader_ = nullptr;
+  ComPtr<ID3D11InputLayout> scRgbInputLayout_ = nullptr;
+  ComPtr<ID3D11Buffer> scRgbVertexBuffer_ = nullptr;
+  ComPtr<ID3D11Buffer> scRgbConfigBuffer_ = nullptr;
+  ComPtr<ID3D11SamplerState> scRgbSampler_ = nullptr;
+  ComPtr<ID3D11Texture2D> scRgbInputCopy_ = nullptr;
+  bool scRgbDiagnosticLogged_ = false;
 
   int count_;
   int index_ = 0;

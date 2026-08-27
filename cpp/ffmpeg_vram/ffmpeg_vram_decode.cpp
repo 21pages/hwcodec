@@ -27,6 +27,7 @@ namespace {
 
 void lockContext(void *lock_ctx);
 void unlockContext(void *lock_ctx);
+void testDecodeCallback(void *texture, const void *obj);
 
 class FFmpegVRamDecoder {
 public:
@@ -42,16 +43,19 @@ public:
   void *device_ = nullptr;
   int64_t luid_ = 0;
   DataFormat dataFormat_;
+  int bitDepth_ = 8;
   std::string name_;
   AVHWDeviceType device_type_ = AV_HWDEVICE_TYPE_D3D11VA;
 
   bool bt709_ = false;
   bool full_range_ = false;
 
-  FFmpegVRamDecoder(void *device, int64_t luid, DataFormat dataFormat) {
+  FFmpegVRamDecoder(void *device, int64_t luid, DataFormat dataFormat,
+                    int bitDepth) {
     device_ = device;
     luid_ = luid;
     dataFormat_ = dataFormat;
+    bitDepth_ = bitDepth;
     switch (dataFormat) {
     case H264:
       name_ = "h264";
@@ -100,7 +104,7 @@ public:
         return -1;
       }
     }
-    if (!native_->support_decode(dataFormat_)) {
+    if (!native_->support_decode(dataFormat_, bitDepth_)) {
       LOG_ERROR(std::string("unsupported data format"));
       return -1;
     }
@@ -198,6 +202,27 @@ private:
         LOG_ERROR(std::string("only AV_PIX_FMT_D3D11 is supported"));
         goto _exit;
       }
+      {
+        ID3D11Texture2D *texture = (ID3D11Texture2D *)frame_->data[0];
+        D3D11_TEXTURE2D_DESC desc = {};
+        if (!texture) {
+          LOG_ERROR(std::string("decoded texture is NULL"));
+          goto _exit;
+        }
+        texture->GetDesc(&desc);
+        DXGI_FORMAT expectedFormat =
+            bitDepth_ == 10 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+        if (desc.Format != expectedFormat) {
+          LOG_ERROR(std::string("decoded texture format mismatch, ") +
+                    std::to_string(desc.Format) + " != " +
+                    std::to_string(expectedFormat));
+          goto _exit;
+        }
+      }
+      if (!callback) {
+        decoded = true;
+        continue;
+      }
       lockContext(this);
       locked = true;
       if (!convert(frame_, callback, obj)) {
@@ -225,6 +250,24 @@ private:
     }
     D3D11_TEXTURE2D_DESC desc2D;
     texture->GetDesc(&desc2D);
+    if (desc2D.Format == DXGI_FORMAT_P010) {
+      if (!native_->EnsureTexture(frame->width, frame->height,
+                                  DXGI_FORMAT_P010)) {
+        LOG_ERROR(std::string("Failed to ensure P010 output texture"));
+        return false;
+      }
+      native_->next();
+      native_->BeginQuery();
+      native_->context_->CopySubresourceRegion(
+          native_->GetCurrentTexture(), 0, 0, 0, 0, texture,
+          (UINT_PTR)frame->data[1], nullptr);
+      native_->EndQuery();
+      if (!native_->Query()) {
+        LOG_ERROR(std::string("Failed to copy P010 output texture"));
+        return false;
+      }
+      return true;
+    }
     if (desc2D.Format != DXGI_FORMAT_NV12) {
       LOG_ERROR(std::string("only DXGI_FORMAT_NV12 is supported"));
       return false;
@@ -299,6 +342,11 @@ void lockContext(void *lock_ctx) { (void)lock_ctx; }
 
 void unlockContext(void *lock_ctx) { (void)lock_ctx; }
 
+void testDecodeCallback(void *texture, const void *obj) {
+  (void)texture;
+  (void)obj;
+}
+
 } // namespace
 
 extern "C" int ffmpeg_vram_destroy_decoder(FFmpegVRamDecoder *decoder) {
@@ -315,12 +363,11 @@ extern "C" int ffmpeg_vram_destroy_decoder(FFmpegVRamDecoder *decoder) {
   return -1;
 }
 
-extern "C" FFmpegVRamDecoder *ffmpeg_vram_new_decoder(void *device,
-                                                      int64_t luid,
-                                                      DataFormat dataFormat) {
+extern "C" FFmpegVRamDecoder *ffmpeg_vram_new_decoder_ex(
+    void *device, int64_t luid, DataFormat dataFormat, int32_t bitDepth) {
   FFmpegVRamDecoder *decoder = NULL;
   try {
-    decoder = new FFmpegVRamDecoder(device, luid, dataFormat);
+    decoder = new FFmpegVRamDecoder(device, luid, dataFormat, bitDepth);
     if (decoder) {
       if (decoder->reset() == 0) {
         return decoder;
@@ -335,6 +382,11 @@ extern "C" FFmpegVRamDecoder *ffmpeg_vram_new_decoder(void *device,
     decoder = NULL;
   }
   return NULL;
+}
+
+extern "C" FFmpegVRamDecoder *ffmpeg_vram_new_decoder(
+    void *device, int64_t luid, DataFormat dataFormat) {
+  return ffmpeg_vram_new_decoder_ex(device, luid, dataFormat, 8);
 }
 
 extern "C" int ffmpeg_vram_decode(FFmpegVRamDecoder *decoder,
@@ -353,11 +405,11 @@ extern "C" int ffmpeg_vram_decode(FFmpegVRamDecoder *decoder,
   return HWCODEC_ERR_COMMON;
 }
 
-extern "C" int ffmpeg_vram_test_decode(int64_t *outLuids, int32_t *outVendors,
-                                       int32_t maxDescNum, int32_t *outDescNum,
-                                       DataFormat dataFormat,
-                                       uint8_t *data, int32_t length,
-                                       const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
+extern "C" int ffmpeg_vram_test_decode_ex(
+    int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+    int32_t *outDescNum, DataFormat dataFormat, int32_t bitDepth,
+    uint8_t *data, int32_t length, const int64_t *excludedLuids,
+    const int32_t *excludeFormats, int32_t excludeCount) {
   try {
     int count = 0;
     struct VendorMapping {
@@ -380,12 +432,14 @@ extern "C" int ffmpeg_vram_test_decode(int64_t *outLuids, int32_t *outVendors,
           continue;
         }
 
-        FFmpegVRamDecoder *p = (FFmpegVRamDecoder *)ffmpeg_vram_new_decoder(
-            nullptr, LUID(adapter.get()->desc1_), dataFormat);
+        FFmpegVRamDecoder *p = (FFmpegVRamDecoder *)ffmpeg_vram_new_decoder_ex(
+            nullptr, LUID(adapter.get()->desc1_), dataFormat, bitDepth);
         if (!p)
           continue;
         auto start = util::now();
-        bool succ = ffmpeg_vram_decode(p, data, length, nullptr, nullptr) == 0;
+        bool succ =
+            ffmpeg_vram_decode(p, data, length, testDecodeCallback, nullptr) ==
+            0;
         int64_t elapsed = util::elapsed_ms(start);
         if (succ && elapsed < TEST_TIMEOUT_MS) {
           outLuids[count] = LUID(adapter.get()->desc1_);
@@ -407,4 +461,14 @@ extern "C" int ffmpeg_vram_test_decode(int64_t *outLuids, int32_t *outVendors,
     std::cerr << e.what() << '\n';
   }
   return -1;
+}
+
+extern "C" int ffmpeg_vram_test_decode(
+    int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+    int32_t *outDescNum, DataFormat dataFormat, uint8_t *data, int32_t length,
+    const int64_t *excludedLuids, const int32_t *excludeFormats,
+    int32_t excludeCount) {
+  return ffmpeg_vram_test_decode_ex(
+      outLuids, outVendors, maxDescNum, outDescNum, dataFormat, 8, data,
+      length, excludedLuids, excludeFormats, excludeCount);
 }

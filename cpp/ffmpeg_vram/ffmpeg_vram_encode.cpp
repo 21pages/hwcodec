@@ -62,6 +62,7 @@ public:
   AVFrame *frame_ = NULL;
   AVFrame *mapped_frame_ = NULL;
   ID3D11Texture2D *encode_texture_ = NULL; // no free
+  int encode_texture_index_ = 0;
   AVPacket *pkt_ = NULL;
   std::unique_ptr<NativeDevice> native_ = nullptr;
   ID3D11Device *d3d11Device_ = NULL;
@@ -76,13 +77,17 @@ public:
   int32_t kbs_;
   int32_t framerate_;
   int32_t gop_;
+  int32_t bitDepth_;
+  bool inputHdr_;
+  bool diagnosticLogged_ = false;
 
   const int align_ = 0;
   const bool full_range_ = false;
   const bool bt709_ = false;
   FFmpegVRamEncoder(void *handle, int64_t luid, DataFormat dataFormat,
                     int32_t width, int32_t height, int32_t kbs,
-                    int32_t framerate, int32_t gop) {
+                    int32_t framerate, int32_t gop, int32_t bitDepth,
+                    bool inputHdr) {
     handle_ = handle;
     luid_ = luid;
     dataFormat_ = dataFormat;
@@ -91,6 +96,8 @@ public:
     kbs_ = kbs;
     framerate_ = framerate;
     gop_ = gop;
+    bitDepth_ = bitDepth;
+    inputHdr_ = inputHdr;
   }
 
   ~FFmpegVRamEncoder() {}
@@ -98,6 +105,12 @@ public:
   bool init() {
     const AVCodec *codec = NULL;
     int ret;
+
+    if ((bitDepth_ != 8 && bitDepth_ != 10) ||
+        (bitDepth_ == 10 && (dataFormat_ != H265 || !inputHdr_))) {
+      LOG_ERROR(std::string("Unsupported bit depth or HDR mode"));
+      return false;
+    }
 
     native_ = std::make_unique<NativeDevice>();
     if (!native_->Init(luid_, (ID3D11Device *)handle_)) {
@@ -113,7 +126,16 @@ public:
     if (!choose_encoder(vendor)) {
       return false;
     }
-          LOG_INFO(std::string("encoder name: ") + encoder_->name_);
+    LOG_INFO(std::string("======== HDR encoder init: name=") +
+             encoder_->name_ + ", vendor=" + std::to_string(vendor) +
+             ", data_format=" + std::to_string(dataFormat_) +
+             ", bit_depth=" + std::to_string(bitDepth_) +
+             ", input_hdr=" + std::to_string(inputHdr_) +
+             ", size=" + std::to_string(width_) + "x" +
+             std::to_string(height_) + ", hw_pixfmt=" +
+             std::to_string(encoder_->hw_pixfmt_) + ", sw_pixfmt=" +
+             std::to_string(encoder_->sw_pixfmt_));
+    LOG_INFO(std::string("encoder name: ") + encoder_->name_);
     if (!(codec = avcodec_find_encoder_by_name(encoder_->name_.c_str()))) {
       LOG_ERROR(std::string("Codec ") + encoder_->name_ + " not found");
       return false;
@@ -130,6 +152,20 @@ public:
     c_->pix_fmt = encoder_->hw_pixfmt_;
     c_->sw_pix_fmt = encoder_->sw_pixfmt_;
     util_encode::set_av_codec_ctx(c_, encoder_->name_, kbs_, gop_, framerate_);
+    if (bitDepth_ == 10) {
+      c_->profile = FF_PROFILE_HEVC_MAIN_10;
+      c_->color_range = AVCOL_RANGE_MPEG;
+      c_->color_primaries = AVCOL_PRI_BT2020;
+      c_->color_trc = AVCOL_TRC_SMPTE2084;
+      c_->colorspace = AVCOL_SPC_BT2020_NCL;
+      c_->chroma_sample_location = AVCHROMA_LOC_LEFT;
+    } else if (inputHdr_) {
+      c_->color_range = AVCOL_RANGE_MPEG;
+      c_->color_primaries = AVCOL_PRI_BT709;
+      c_->color_trc = AVCOL_TRC_BT709;
+      c_->colorspace = AVCOL_SPC_BT709;
+      c_->chroma_sample_location = AVCHROMA_LOC_LEFT;
+    }
     if (!util_encode::set_lantency_free(c_->priv_data, encoder_->name_)) {
       return false;
     }
@@ -216,8 +252,10 @@ public:
         return false;
       }
       encode_texture_ = (ID3D11Texture2D *)mapped_frame_->data[0];
+      encode_texture_index_ = (int)(UINT_PTR)mapped_frame_->data[1];
     } else {
       encode_texture_ = (ID3D11Texture2D *)frame_->data[0];
+      encode_texture_index_ = (int)(UINT_PTR)frame_->data[1];
     }
 
     return true;
@@ -263,6 +301,8 @@ public:
 
 private:
   bool choose_encoder(AdapterVendor vendor) {
+    AVPixelFormat sw_pixfmt =
+        bitDepth_ == 10 ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     if (ADAPTER_VENDOR_NVIDIA == vendor) {
       const char *name = nullptr;
       if (dataFormat_ == H264) {
@@ -275,7 +315,7 @@ private:
       }
       encoder_ = std::make_unique<Encoder>(
           EncoderDriver::NVENC, name, AV_HWDEVICE_TYPE_D3D11VA,
-          AV_HWDEVICE_TYPE_NONE, AV_PIX_FMT_D3D11, AV_PIX_FMT_NV12);
+          AV_HWDEVICE_TYPE_NONE, AV_PIX_FMT_D3D11, sw_pixfmt);
       return true;
     } else if (ADAPTER_VENDOR_AMD == vendor) {
       const char *name = nullptr;
@@ -289,7 +329,7 @@ private:
       }
       encoder_ = std::make_unique<Encoder>(
           EncoderDriver::AMF, name, AV_HWDEVICE_TYPE_D3D11VA,
-          AV_HWDEVICE_TYPE_NONE, AV_PIX_FMT_D3D11, AV_PIX_FMT_NV12);
+          AV_HWDEVICE_TYPE_NONE, AV_PIX_FMT_D3D11, sw_pixfmt);
       return true;
     } else if (ADAPTER_VENDOR_INTEL == vendor) {
       const char *name = nullptr;
@@ -303,7 +343,7 @@ private:
       }
       encoder_ = std::make_unique<Encoder>(
           EncoderDriver::QSV, name, AV_HWDEVICE_TYPE_D3D11VA,
-          AV_HWDEVICE_TYPE_QSV, AV_PIX_FMT_QSV, AV_PIX_FMT_NV12);
+          AV_HWDEVICE_TYPE_QSV, AV_PIX_FMT_QSV, sw_pixfmt);
       return true;
     } else {
       LOG_ERROR(std::string("Unsupported vendor: ") + std::to_string(vendor));
@@ -348,16 +388,30 @@ private:
       ID3D11Texture2D *texture2D = (ID3D11Texture2D *)encode_texture_;
       D3D11_TEXTURE2D_DESC desc;
       texture2D->GetDesc(&desc);
-      if (desc.Format != DXGI_FORMAT_NV12) {
+      DXGI_FORMAT expectedFormat =
+          bitDepth_ == 10 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+      if (desc.Format != expectedFormat) {
         LOG_ERROR(std::string("convert: texture format mismatch, ") +
                   std::to_string(desc.Format) +
-                  " != " + std::to_string(DXGI_FORMAT_NV12));
+                  " != " + std::to_string(expectedFormat));
         return false;
       }
-      DXGI_COLOR_SPACE_TYPE colorSpace_in =
-          DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+      ID3D11Texture2D *inputTexture = (ID3D11Texture2D *)texture;
+      D3D11_TEXTURE2D_DESC inputDesc;
+      inputTexture->GetDesc(&inputDesc);
+      if (inputHdr_ && inputDesc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) {
+        LOG_ERROR(std::string("convert: HDR input texture is not FP16"));
+        return false;
+      }
+      DXGI_COLOR_SPACE_TYPE colorSpace_in = inputHdr_
+          ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+          : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
       DXGI_COLOR_SPACE_TYPE colorSpace_out;
-      if (bt709_) {
+      if (bitDepth_ == 10) {
+        colorSpace_out = DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020;
+      } else if (inputHdr_) {
+        colorSpace_out = DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709;
+      } else if (bt709_) {
         if (full_range_) {
           colorSpace_out = DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709;
         } else {
@@ -370,9 +424,31 @@ private:
           colorSpace_out = DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601;
         }
       }
-      if (!native_->BgraToNv12((ID3D11Texture2D *)texture, texture2D, width_,
-                               height_, colorSpace_in, colorSpace_out)) {
-        LOG_ERROR(std::string("convert: BgraToNv12 failed"));
+      if (!diagnosticLogged_) {
+        D3D11_TEXTURE2D_DESC outputDesc;
+        texture2D->GetDesc(&outputDesc);
+        LOG_INFO(std::string("======== HDR encoder convert: input_hdr=") +
+                 std::to_string(inputHdr_) + ", bit_depth=" +
+                 std::to_string(bitDepth_) + ", input_format=" +
+                 std::to_string(inputDesc.Format) + ", input_size=" +
+                 std::to_string(inputDesc.Width) + "x" +
+                 std::to_string(inputDesc.Height) + ", output_format=" +
+                 std::to_string(outputDesc.Format) + ", output_size=" +
+                 std::to_string(outputDesc.Width) + "x" +
+                 std::to_string(outputDesc.Height) + ", color_in=" +
+                 std::to_string(colorSpace_in) + ", color_out=" +
+                 std::to_string(colorSpace_out));
+        diagnosticLogged_ = true;
+      }
+      if (inputHdr_) {
+        if (!native_->ScRgbToYuv(inputTexture, texture2D, width_, height_,
+                                 bitDepth_ == 10, encode_texture_index_)) {
+          LOG_ERROR(std::string("convert: ScRgbToYuv failed"));
+          return false;
+        }
+      } else if (!native_->RgbToYuv(inputTexture, texture2D, width_, height_,
+                                    colorSpace_in, colorSpace_out)) {
+        LOG_ERROR(std::string("convert: RgbToYuv failed"));
         return false;
       }
       return true;
@@ -429,14 +505,15 @@ void unlockContext(void *lock_ctx) { (void)lock_ctx; }
 } // namespace
 
 extern "C" {
-FFmpegVRamEncoder *ffmpeg_vram_new_encoder(void *handle, int64_t luid,
-                                           DataFormat dataFormat, int32_t width,
-                                           int32_t height, int32_t kbs,
-                                           int32_t framerate, int32_t gop) {
+FFmpegVRamEncoder *ffmpeg_vram_new_encoder_ex(
+    void *handle, int64_t luid, DataFormat dataFormat, int32_t width,
+    int32_t height, int32_t kbs, int32_t framerate, int32_t gop,
+    int32_t bitDepth, int32_t inputHdr) {
   FFmpegVRamEncoder *encoder = NULL;
   try {
-    encoder = new FFmpegVRamEncoder(handle, luid, dataFormat, width,
-                                    height, kbs, framerate, gop);
+    encoder = new FFmpegVRamEncoder(handle, luid, dataFormat, width, height,
+                                    kbs, framerate, gop, bitDepth,
+                                    inputHdr != 0);
     if (encoder) {
       if (encoder->init()) {
         return encoder;
@@ -451,6 +528,14 @@ FFmpegVRamEncoder *ffmpeg_vram_new_encoder(void *handle, int64_t luid,
     encoder = NULL;
   }
   return NULL;
+}
+
+FFmpegVRamEncoder *ffmpeg_vram_new_encoder(void *handle, int64_t luid,
+                                           DataFormat dataFormat, int32_t width,
+                                           int32_t height, int32_t kbs,
+                                           int32_t framerate, int32_t gop) {
+  return ffmpeg_vram_new_encoder_ex(handle, luid, dataFormat, width, height,
+                                    kbs, framerate, gop, 8, 0);
 }
 
 int ffmpeg_vram_encode(FFmpegVRamEncoder *encoder, void *texture,
@@ -493,11 +578,12 @@ int ffmpeg_vram_set_framerate(FFmpegVRamEncoder *encoder, int32_t framerate) {
   return -1;
 }
 
-int ffmpeg_vram_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
-                            int32_t *outDescNum, DataFormat dataFormat,
-                            int32_t width, int32_t height, int32_t kbs,
-                            int32_t framerate, int32_t gop,
-                            const int64_t *excludedLuids, const int32_t *excludeFormats, int32_t excludeCount) {
+int ffmpeg_vram_test_encode_ex(
+    int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+    int32_t *outDescNum, DataFormat dataFormat, int32_t width, int32_t height,
+    int32_t kbs, int32_t framerate, int32_t gop, int32_t bitDepth,
+    int32_t inputHdr, const int64_t *excludedLuids,
+    const int32_t *excludeFormats, int32_t excludeCount) {
   try {
     int count = 0;
     struct VendorMapping {
@@ -516,16 +602,20 @@ int ffmpeg_vram_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxD
         continue;
       for (auto &adapter : adapters.adapters_) {
         int64_t currentLuid = LUID(adapter.get()->desc1_);
-        if (util::skip_test(excludedLuids, excludeFormats, excludeCount, currentLuid, dataFormat)) {
+        if (util::skip_test(excludedLuids, excludeFormats, excludeCount,
+                            currentLuid, dataFormat)) {
           continue;
         }
-        
-        FFmpegVRamEncoder *e = (FFmpegVRamEncoder *)ffmpeg_vram_new_encoder(
-            (void *)adapter.get()->device_.Get(), currentLuid,
-            dataFormat, width, height, kbs, framerate, gop);
+        FFmpegVRamEncoder *e =
+            (FFmpegVRamEncoder *)ffmpeg_vram_new_encoder_ex(
+                (void *)adapter.get()->device_.Get(), currentLuid, dataFormat,
+                width, height, kbs, framerate, gop, bitDepth, inputHdr);
         if (!e)
           continue;
-        if (e->native_->EnsureTexture(e->width_, e->height_)) {
+        DXGI_FORMAT inputFormat = inputHdr != 0
+                                      ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                      : DXGI_FORMAT_B8G8R8A8_UNORM;
+        if (e->native_->EnsureTexture(e->width_, e->height_, inputFormat)) {
           e->native_->next();
           int32_t key_obj = 0;
           auto start = util::now();
@@ -553,6 +643,17 @@ int ffmpeg_vram_test_encode(int64_t *outLuids, int32_t *outVendors, int32_t maxD
     LOG_ERROR(std::string("test failed: ") + e.what());
   }
   return -1;
+}
+
+int ffmpeg_vram_test_encode(
+    int64_t *outLuids, int32_t *outVendors, int32_t maxDescNum,
+    int32_t *outDescNum, DataFormat dataFormat, int32_t width, int32_t height,
+    int32_t kbs, int32_t framerate, int32_t gop,
+    const int64_t *excludedLuids, const int32_t *excludeFormats,
+    int32_t excludeCount) {
+  return ffmpeg_vram_test_encode_ex(
+      outLuids, outVendors, maxDescNum, outDescNum, dataFormat, width, height,
+      kbs, framerate, gop, 8, 0, excludedLuids, excludeFormats, excludeCount);
 }
 
 } // extern "C"

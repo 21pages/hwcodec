@@ -23,6 +23,12 @@ typedef struct _VERTEX {
   DirectX::XMFLOAT2 TexCoord;
 } VERTEX;
 
+struct ScRgbShaderConfig {
+  UINT hdrOutput;
+  UINT uvPlane;
+  float padding[2];
+};
+
 bool NativeDevice::Init(int64_t luid, ID3D11Device *device, int pool_size) {
   if (device) {
     if (!InitFromDevice(device))
@@ -319,13 +325,13 @@ bool NativeDevice::nv12_to_bgra_draw() {
   return true;
 }
 
-bool NativeDevice::EnsureTexture(int width, int height) {
+bool NativeDevice::EnsureTexture(int width, int height, DXGI_FORMAT format) {
   D3D11_TEXTURE2D_DESC desc;
   ZeroMemory(&desc, sizeof(desc));
   if (texture_[0]) {
     texture_[0]->GetDesc(&desc);
     if ((int)desc.Width == width && (int)desc.Height == height &&
-        desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM &&
+        desc.Format == format &&
         desc.MiscFlags == D3D11_RESOURCE_MISC_SHARED &&
         desc.Usage == D3D11_USAGE_DEFAULT) {
       return true;
@@ -335,7 +341,7 @@ bool NativeDevice::EnsureTexture(int width, int height) {
   desc.Height = height;
   desc.MipLevels = 1;
   desc.ArraySize = 1;
-  desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  desc.Format = format;
   desc.SampleDesc.Count = 1;
   desc.SampleDesc.Quality = 0;
   desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
@@ -419,6 +425,14 @@ bool NativeDevice::Process(ID3D11Texture2D *in, ID3D11Texture2D *out, int width,
   memcpy(&last_content_desc_, &content_desc, sizeof(content_desc));
 
   if (!video_processor_enumerator_ || !video_processor_) {
+    LOG_INFO(std::string("======== HDR video processor: input_format=") +
+             std::to_string(inDesc.Format) + ", output_format=" +
+             std::to_string(outDesc.Format) + ", size=" +
+             std::to_string(width) + "x" + std::to_string(height) +
+             ", color_in=" + std::to_string(colorSpace_in) +
+             ", color_out=" + std::to_string(colorSpace_out) +
+             ", input_frame_format=" +
+             std::to_string(content_desc.InputFrameFormat));
     HRB(video_device_->CreateVideoProcessorEnumerator(
         &content_desc, video_processor_enumerator_.ReleaseAndGetAddressOf()));
     HRB(video_device_->CreateVideoProcessor(
@@ -481,10 +495,18 @@ bool NativeDevice::BgraToNv12(ID3D11Texture2D *bgraTexture,
                               ID3D11Texture2D *nv12Texture, int width,
                               int height, DXGI_COLOR_SPACE_TYPE colorSpace_in,
                               DXGI_COLOR_SPACE_TYPE colorSpace_out) {
+  return RgbToYuv(bgraTexture, nv12Texture, width, height, colorSpace_in,
+                  colorSpace_out);
+}
+
+bool NativeDevice::RgbToYuv(ID3D11Texture2D *rgbTexture,
+                            ID3D11Texture2D *yuvTexture, int width,
+                            int height, DXGI_COLOR_SPACE_TYPE colorSpace_in,
+                            DXGI_COLOR_SPACE_TYPE colorSpace_out) {
   D3D11_TEXTURE2D_DESC bgraDesc = {0};
   D3D11_TEXTURE2D_DESC nv12Desc = {0};
-  bgraTexture->GetDesc(&bgraDesc);
-  nv12Texture->GetDesc(&nv12Desc);
+  rgbTexture->GetDesc(&bgraDesc);
+  yuvTexture->GetDesc(&nv12Desc);
   if (bgraDesc.Width < width || bgraDesc.Height < height) {
     LOG_ERROR(std::string("bgraTexture size is smaller than width and height, ") +
               std::to_string(bgraDesc.Width) + "x" +
@@ -516,8 +538,221 @@ bool NativeDevice::BgraToNv12(ID3D11Texture2D *bgraTexture,
   contentDesc.OutputFrameRate.Numerator = 30;
   contentDesc.OutputFrameRate.Denominator = 1;
 
-  return Process(bgraTexture, nv12Texture, width, height, contentDesc,
+  return Process(rgbTexture, yuvTexture, width, height, contentDesc,
                  colorSpace_in, colorSpace_out, 0);
+}
+
+bool NativeDevice::sc_rgb_to_yuv_init() {
+  if (scRgbVertexShader_ && scRgbPixelShader_ && scRgbInputLayout_ &&
+      scRgbVertexBuffer_ && scRgbConfigBuffer_ && scRgbSampler_) {
+    return true;
+  }
+
+#include "pixel_shader_scrgb_to_yuv.h"
+#include "vertex_shader.h"
+
+  HRB(device_->CreateVertexShader(g_VS, ARRAYSIZE(g_VS), nullptr,
+                                  scRgbVertexShader_.ReleaseAndGetAddressOf()));
+  HRB(device_->CreatePixelShader(
+      g_PS_SCRGB_TO_YUV, ARRAYSIZE(g_PS_SCRGB_TO_YUV), nullptr,
+      scRgbPixelShader_.ReleaseAndGetAddressOf()));
+
+  constexpr std::array<D3D11_INPUT_ELEMENT_DESC, 2> layout = {{
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+       D3D11_INPUT_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12,
+       D3D11_INPUT_PER_VERTEX_DATA, 0},
+  }};
+  HRB(device_->CreateInputLayout(
+      layout.data(), layout.size(), g_VS, ARRAYSIZE(g_VS),
+      scRgbInputLayout_.ReleaseAndGetAddressOf()));
+
+  VERTEX vertices[NUMVERTICES] = {
+      {XMFLOAT3(-1.0f, -1.0f, 0), XMFLOAT2(0.0f, 1.0f)},
+      {XMFLOAT3(-1.0f, 1.0f, 0), XMFLOAT2(0.0f, 0.0f)},
+      {XMFLOAT3(1.0f, -1.0f, 0), XMFLOAT2(1.0f, 1.0f)},
+      {XMFLOAT3(1.0f, -1.0f, 0), XMFLOAT2(1.0f, 1.0f)},
+      {XMFLOAT3(-1.0f, 1.0f, 0), XMFLOAT2(0.0f, 0.0f)},
+      {XMFLOAT3(1.0f, 1.0f, 0), XMFLOAT2(1.0f, 0.0f)},
+  };
+  D3D11_BUFFER_DESC vertexBufferDesc = {};
+  vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+  vertexBufferDesc.ByteWidth = sizeof(vertices);
+  vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+  D3D11_SUBRESOURCE_DATA vertexData = {};
+  vertexData.pSysMem = vertices;
+  HRB(device_->CreateBuffer(&vertexBufferDesc, &vertexData,
+                            scRgbVertexBuffer_.ReleaseAndGetAddressOf()));
+
+  D3D11_BUFFER_DESC configBufferDesc = {};
+  configBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+  configBufferDesc.ByteWidth = sizeof(ScRgbShaderConfig);
+  configBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+  HRB(device_->CreateBuffer(&configBufferDesc, nullptr,
+                            scRgbConfigBuffer_.ReleaseAndGetAddressOf()));
+
+  D3D11_SAMPLER_DESC samplerDesc = {};
+  samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+  samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+  samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+  samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+  samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+  samplerDesc.MinLOD = 0;
+  samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+  HRB(device_->CreateSamplerState(
+      &samplerDesc, scRgbSampler_.ReleaseAndGetAddressOf()));
+  return true;
+}
+
+bool NativeDevice::ScRgbToYuv(ID3D11Texture2D *rgbTexture,
+                              ID3D11Texture2D *yuvTexture, int width,
+                              int height, bool hdrOutput,
+                              int outputArraySlice) {
+  if (!rgbTexture || !yuvTexture || width <= 0 || height <= 0) {
+    return false;
+  }
+
+  D3D11_TEXTURE2D_DESC inputDesc = {};
+  D3D11_TEXTURE2D_DESC outputDesc = {};
+  rgbTexture->GetDesc(&inputDesc);
+  yuvTexture->GetDesc(&outputDesc);
+  DXGI_FORMAT expectedOutput =
+      hdrOutput ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+  if (inputDesc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT ||
+      outputDesc.Format != expectedOutput || inputDesc.Width < (UINT)width ||
+      inputDesc.Height < (UINT)height || outputDesc.Width < (UINT)width ||
+      outputDesc.Height < (UINT)height || outputArraySlice < 0 ||
+      outputArraySlice >= (int)outputDesc.ArraySize) {
+    LOG_ERROR(std::string("ScRgbToYuv texture mismatch"));
+    return false;
+  }
+  if (!sc_rgb_to_yuv_init()) {
+    return false;
+  }
+
+  ID3D11Texture2D *shaderInput = rgbTexture;
+  bool copiedInput = false;
+  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+  srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+  srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+  srvDesc.Texture2D.MipLevels = 1;
+  ComPtr<ID3D11ShaderResourceView> inputView = nullptr;
+  HRESULT hr = E_INVALIDARG;
+  if ((inputDesc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 &&
+      inputDesc.ArraySize == 1) {
+    hr = device_->CreateShaderResourceView(
+        shaderInput, &srvDesc, inputView.ReleaseAndGetAddressOf());
+  }
+  if (FAILED(hr)) {
+    D3D11_TEXTURE2D_DESC copyDesc = inputDesc;
+    copyDesc.MipLevels = 1;
+    copyDesc.ArraySize = 1;
+    copyDesc.SampleDesc.Count = 1;
+    copyDesc.SampleDesc.Quality = 0;
+    copyDesc.Usage = D3D11_USAGE_DEFAULT;
+    copyDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    copyDesc.CPUAccessFlags = 0;
+    copyDesc.MiscFlags = 0;
+
+    D3D11_TEXTURE2D_DESC currentCopyDesc = {};
+    if (scRgbInputCopy_) {
+      scRgbInputCopy_->GetDesc(&currentCopyDesc);
+    }
+    if (!scRgbInputCopy_ || currentCopyDesc.Width != copyDesc.Width ||
+        currentCopyDesc.Height != copyDesc.Height ||
+        currentCopyDesc.Format != copyDesc.Format) {
+      HRB(device_->CreateTexture2D(
+          &copyDesc, nullptr, scRgbInputCopy_.ReleaseAndGetAddressOf()));
+    }
+    D3D11_BOX sourceBox = {0, 0, 0, (UINT)width, (UINT)height, 1};
+    context_->CopySubresourceRegion(scRgbInputCopy_.Get(), 0, 0, 0, 0,
+                                    rgbTexture, 0, &sourceBox);
+    shaderInput = scRgbInputCopy_.Get();
+    copiedInput = true;
+    HRB(device_->CreateShaderResourceView(
+        shaderInput, &srvDesc, inputView.ReleaseAndGetAddressOf()));
+  }
+
+  D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+  if (outputDesc.ArraySize == 1) {
+    rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    rtvDesc.Texture2D.MipSlice = 0;
+  } else {
+    rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+    rtvDesc.Texture2DArray.MipSlice = 0;
+    rtvDesc.Texture2DArray.FirstArraySlice = outputArraySlice;
+    rtvDesc.Texture2DArray.ArraySize = 1;
+  }
+
+  rtvDesc.Format =
+      hdrOutput ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+  ComPtr<ID3D11RenderTargetView> yView = nullptr;
+  HRB(device_->CreateRenderTargetView(yuvTexture, &rtvDesc,
+                                      yView.ReleaseAndGetAddressOf()));
+  rtvDesc.Format =
+      hdrOutput ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+  ComPtr<ID3D11RenderTargetView> uvView = nullptr;
+  HRB(device_->CreateRenderTargetView(yuvTexture, &rtvDesc,
+                                      uvView.ReleaseAndGetAddressOf()));
+
+  float maximum = hdrOutput ? 1023.0f : 255.0f;
+  float black = (hdrOutput ? 64.0f : 16.0f) / maximum;
+  float neutral = (hdrOutput ? 512.0f : 128.0f) / maximum;
+  const float yClear[4] = {black, 0.0f, 0.0f, 1.0f};
+  const float uvClear[4] = {neutral, neutral, 0.0f, 1.0f};
+  context_->ClearRenderTargetView(yView.Get(), yClear);
+  context_->ClearRenderTargetView(uvView.Get(), uvClear);
+
+  UINT stride = sizeof(VERTEX);
+  UINT offset = 0;
+  context_->IASetInputLayout(scRgbInputLayout_.Get());
+  context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  context_->IASetVertexBuffers(0, 1, scRgbVertexBuffer_.GetAddressOf(), &stride,
+                               &offset);
+  context_->VSSetShader(scRgbVertexShader_.Get(), nullptr, 0);
+  context_->PSSetShader(scRgbPixelShader_.Get(), nullptr, 0);
+  context_->PSSetShaderResources(0, 1, inputView.GetAddressOf());
+  context_->PSSetSamplers(0, 1, scRgbSampler_.GetAddressOf());
+  context_->PSSetConstantBuffers(0, 1, scRgbConfigBuffer_.GetAddressOf());
+
+  D3D11_VIEWPORT viewport = {};
+  viewport.Width = (float)width;
+  viewport.Height = (float)height;
+  viewport.MaxDepth = 1.0f;
+  context_->RSSetViewports(1, &viewport);
+  context_->OMSetRenderTargets(1, yView.GetAddressOf(), nullptr);
+  ScRgbShaderConfig config = {hdrOutput ? 1u : 0u, 0u, {0.0f, 0.0f}};
+  context_->UpdateSubresource(scRgbConfigBuffer_.Get(), 0, nullptr, &config, 0,
+                              0);
+  context_->Draw(NUMVERTICES, 0);
+
+  viewport.Width = (float)((width + 1) / 2);
+  viewport.Height = (float)((height + 1) / 2);
+  context_->RSSetViewports(1, &viewport);
+  context_->OMSetRenderTargets(1, uvView.GetAddressOf(), nullptr);
+  config.uvPlane = 1;
+  context_->UpdateSubresource(scRgbConfigBuffer_.Get(), 0, nullptr, &config, 0,
+                              0);
+  context_->Draw(NUMVERTICES, 0);
+
+  ID3D11ShaderResourceView *nullView = nullptr;
+  ID3D11RenderTargetView *nullTarget = nullptr;
+  context_->PSSetShaderResources(0, 1, &nullView);
+  context_->OMSetRenderTargets(1, &nullTarget, nullptr);
+
+  if (!scRgbDiagnosticLogged_) {
+    LOG_INFO(std::string("======== HDR shader converter: input_format=") +
+             std::to_string(inputDesc.Format) + ", input_bind_flags=" +
+             std::to_string(inputDesc.BindFlags) + ", copied_input=" +
+             std::to_string(copiedInput) + ", output_format=" +
+             std::to_string(outputDesc.Format) + ", output_bind_flags=" +
+             std::to_string(outputDesc.BindFlags) + ", output_array_size=" +
+             std::to_string(outputDesc.ArraySize) + ", output_array_slice=" +
+             std::to_string(outputArraySlice) + ", hdr_output=" +
+             std::to_string(hdrOutput));
+    scRgbDiagnosticLogged_ = true;
+  }
+  return true;
 }
 
 AdapterVendor NativeDevice::GetVendor() {
@@ -534,20 +769,31 @@ AdapterVendor NativeDevice::GetVendor() {
   }
 }
 
-bool NativeDevice::support_decode(DataFormat format) {
+bool NativeDevice::support_decode(DataFormat format, int bitDepth) {
   const GUID *guid = nullptr;
+  DXGI_FORMAT surfaceFormat = DXGI_FORMAT_NV12;
   switch (format) {
   case H264:
+    if (bitDepth != 8) {
+      return false;
+    }
     guid = &D3D11_DECODER_PROFILE_H264_VLD_NOFGT;
     break;
   case H265:
-    guid = &D3D11_DECODER_PROFILE_HEVC_VLD_MAIN;
+    if (bitDepth == 8) {
+      guid = &D3D11_DECODER_PROFILE_HEVC_VLD_MAIN;
+    } else if (bitDepth == 10) {
+      guid = &D3D11_DECODER_PROFILE_HEVC_VLD_MAIN10;
+      surfaceFormat = DXGI_FORMAT_P010;
+    } else {
+      return false;
+    }
     break;
   default:
     return false;
   }
   BOOL supported = FALSE;
-  if (S_OK != video_device_->CheckVideoDecoderFormat(guid, DXGI_FORMAT_NV12,
+  if (S_OK != video_device_->CheckVideoDecoderFormat(guid, surfaceFormat,
                                                      &supported)) {
     return false;
   }

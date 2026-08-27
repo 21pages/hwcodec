@@ -26,6 +26,7 @@ fn main() {
                 vendor: Driver::NV,
                 data_format,
                 luid,
+                bit_depth: 8,
             },
             d: DynamicContext {
                 device: Some(capturer.device()),
@@ -34,9 +35,11 @@ fn main() {
                 kbitrate: 5000,
                 framerate: 30,
                 gop: MAX_GOP as _,
+                input_hdr: false,
             },
         };
         let de_ctx = DecodeContext {
+            bit_depth: 8,
             device: Some(render.device()),
             driver: Driver::FFMPEG,
             vendor: Driver::NV,

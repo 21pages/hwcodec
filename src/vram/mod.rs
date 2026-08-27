@@ -20,6 +20,12 @@ pub struct FeatureContext {
     pub vendor: Driver,
     pub luid: i64,
     pub data_format: DataFormat,
+    #[serde(default = "default_bit_depth")]
+    pub bit_depth: u8,
+}
+
+fn default_bit_depth() -> u8 {
+    8
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -31,6 +37,8 @@ pub struct DynamicContext {
     pub kbitrate: i32,
     pub framerate: i32,
     pub gop: i32,
+    #[serde(default)]
+    pub input_hdr: bool,
 }
 
 unsafe impl Send for DynamicContext {}
@@ -50,6 +58,8 @@ pub struct DecodeContext {
     pub vendor: Driver,
     pub luid: i64,
     pub data_format: DataFormat,
+    #[serde(default = "default_bit_depth")]
+    pub bit_depth: u8,
 }
 
 unsafe impl Send for DecodeContext {}
@@ -86,5 +96,38 @@ impl Available {
                 .iter()
                 .any(|d| d.vendor == vendor && d.data_format == data_format)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_context_from_old_cache_defaults_to_eight_bit() {
+        let json = r#"{
+            "driver":"FFMPEG",
+            "vendor":"NV",
+            "luid":1,
+            "data_format":"H265"
+        }"#;
+
+        let feature: FeatureContext = serde_json::from_str(json).unwrap();
+
+        assert_eq!(feature.bit_depth, 8);
+    }
+
+    #[test]
+    fn decode_context_from_old_cache_defaults_to_eight_bit() {
+        let json = r#"{
+            "driver":"FFMPEG",
+            "vendor":"NV",
+            "luid":1,
+            "data_format":"H265"
+        }"#;
+
+        let context: DecodeContext = serde_json::from_str(json).unwrap();
+
+        assert_eq!(context.bit_depth, 8);
     }
 }

@@ -34,6 +34,17 @@ impl Decoder {
             FFMPEG => ffmpeg::decode_calls(),
         };
         unsafe {
+            #[cfg(windows)]
+            let codec = if ctx.driver == FFMPEG && ctx.bit_depth == 10 {
+                ffmpeg::new_main10_decoder(&ctx)
+            } else {
+                (calls.new)(
+                    ctx.device.unwrap_or(std::ptr::null_mut()),
+                    ctx.luid,
+                    ctx.data_format as i32,
+                )
+            };
+            #[cfg(not(windows))]
             let codec = (calls.new)(
                 ctx.device.unwrap_or(std::ptr::null_mut()),
                 ctx.luid,
@@ -140,6 +151,7 @@ pub fn available() -> Vec<DecodeContext> {
             vendor: driver, // Initially set vendor same as driver, will be updated by test results
             data_format: n.data_format,
             luid: 0,
+            bit_depth: 8,
         })
         .collect();
 
@@ -225,6 +237,9 @@ pub fn available() -> Vec<DecodeContext> {
             );
         }
     }
+
+    #[cfg(windows)]
+    outputs.extend(ffmpeg::available_main10_decoders());
 
     outputs
 }

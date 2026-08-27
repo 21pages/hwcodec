@@ -33,16 +33,23 @@ impl Encoder {
             FFMPEG => ffmpeg::encode_calls(),
         };
         unsafe {
-            let codec = (calls.new)(
-                ctx.d.device.unwrap_or(std::ptr::null_mut()),
-                ctx.f.luid,
-                ctx.f.data_format as i32,
-                ctx.d.width,
-                ctx.d.height,
-                ctx.d.kbitrate,
-                ctx.d.framerate,
-                ctx.d.gop,
-            );
+            if (ctx.f.bit_depth != 8 || ctx.d.input_hdr) && ctx.f.driver != FFMPEG {
+                return Err(());
+            }
+            let codec = if ctx.f.driver == FFMPEG && (ctx.f.bit_depth != 8 || ctx.d.input_hdr) {
+                ffmpeg::new_encoder(&ctx)
+            } else {
+                (calls.new)(
+                    ctx.d.device.unwrap_or(std::ptr::null_mut()),
+                    ctx.f.luid,
+                    ctx.f.data_format as i32,
+                    ctx.d.width,
+                    ctx.d.height,
+                    ctx.d.kbitrate,
+                    ctx.d.framerate,
+                    ctx.d.gop,
+                )
+            };
             if codec.is_null() {
                 return Err(());
             }
@@ -162,6 +169,7 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
                 vendor: driver, // Initially set vendor same as driver, will be updated by test results
                 data_format: n.format,
                 luid: 0,
+                bit_depth: 8,
             },
             d,
         })
@@ -242,6 +250,13 @@ pub fn available(d: DynamicContext) -> Vec<FeatureContext> {
             );
         }
     }
+
+    #[cfg(windows)]
+    outputs.extend(
+        ffmpeg::available_main10(d)
+            .into_iter()
+            .map(|f| EncodeContext { f, d }),
+    );
 
     let result: Vec<_> = outputs.drain(..).map(|e| e.f).collect();
     result
