@@ -20,6 +20,9 @@ extern "C" {
 #ifdef _WIN32
 #include "win.h"
 #endif
+#if defined(__linux__) && !defined(__ANDROID__)
+#include "vaapi_encode.h"
+#endif
 
 static int calculate_offset_length(int pix_fmt, int height, const int *linesize,
                                    int *offset, int *length) {
@@ -249,6 +252,12 @@ public:
         }
       }
     }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (hw_device_type_ == AV_HWDEVICE_TYPE_VAAPI &&
+        !vaapi_encode::set_rate_control(c_, hw_device_ctx_, rc_, q_))
+      return false;
+#endif
 
     if ((ret = avcodec_open2(c_, codec, NULL)) < 0) {
       LOG_ERROR(std::string("avcodec_open2 failed, ret = ") + av_err2str(ret) +
