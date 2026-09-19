@@ -311,6 +311,11 @@ impl Encoder {
                 let c = EncodeContext {
                     name: codec.name.clone(),
                     mc_name: codec.mc_name.clone(),
+                    rc: if codec.name.contains("vaapi") {
+                        RateControl::RC_CQ
+                    } else {
+                        ctx.rc
+                    },
                     ..ctx
                 };
 
