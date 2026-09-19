@@ -276,6 +276,9 @@ private:
 
     // Allocate surfaces for decoder
     if (reinit) {
+      // Release the SDK's references before freeing the cached surface pool.
+      sts = mfxDEC_->Close();
+      MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
       sts = d3d11FrameAllocator_.FreeFrames(&mfxResponse_);
       MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
     }
@@ -293,11 +296,6 @@ private:
     }
 
     // Initialize the Media SDK decoder
-    if (reinit) {
-      // https://github.com/FFmpeg/FFmpeg/blob/f84412d6f4e9c1f1d1a2491f9337d7e789c688ba/libavcodec/qsvdec.c#L181
-      sts = mfxDEC_->Close();
-      MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
-    }
     sts = mfxDEC_->Init(&mfxVideoParams_);
     MSDK_IGNORE_MFX_STS(sts, MFX_WRN_PARTIAL_ACCELERATION);
     MSDK_CHECK_RESULT(sts, MFX_ERR_NONE, sts);
