@@ -272,6 +272,8 @@ public:
   int encode(const uint8_t *data, int length, const void *obj, uint64_t ms) {
     int ret;
 
+    if (!data)
+      return -1;
     if ((ret = av_frame_make_writable(frame_)) != 0) {
       LOG_ERROR(std::string("av_frame_make_writable failed, ret = ") + av_err2str(ret));
       return ret;
@@ -385,8 +387,8 @@ private:
       break;
     case AV_PIX_FMT_YUV420P:
       if (data_length <
-          frame->height * (input_linesize_[0] + input_linesize_[1] / 2 +
-                           input_linesize_[2] / 2)) {
+          frame->height * input_linesize_[0] +
+              (frame->height / 2) * (input_linesize_[1] + input_linesize_[2])) {
         LOG_ERROR(std::string("fill_frame: 420P data length error. data_length:") +
                   std::to_string(data_length) +
                   ", linesize[0]:" + std::to_string(input_linesize_[0]) +
