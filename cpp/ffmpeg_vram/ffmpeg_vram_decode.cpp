@@ -221,6 +221,8 @@ private:
       }
       if (callback)
         callback(native_->GetCurrentTexture(), obj);
+      unlockContext(this);
+      locked = false;
       decoded = true;
     }
   _exit:
