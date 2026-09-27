@@ -379,8 +379,6 @@ int NativeDevice::next() {
   return index_;
 }
 
-void NativeDevice::BeginQuery() { context_->Begin(query_.Get()); }
-
 void NativeDevice::EndQuery() { context_->End(query_.Get()); }
 
 bool NativeDevice::Query() {

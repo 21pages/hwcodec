@@ -250,7 +250,6 @@ private:
     }
     native_->next(); // comment out to remove picture shaking
 #ifdef USE_SHADER
-    native_->BeginQuery();
     if (!native_->Nv12ToBgra(frame->width, frame->height, texture,
                              native_->GetCurrentTexture(),
                              (int)frame->data[1])) {
@@ -265,8 +264,6 @@ private:
     }
 
 #else
-    native_->BeginQuery();
-
     // nv12 -> bgra
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC contentDesc;
     ZeroMemory(&contentDesc, sizeof(contentDesc));
