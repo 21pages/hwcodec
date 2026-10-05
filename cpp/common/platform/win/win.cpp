@@ -378,6 +378,10 @@ int NativeDevice::next() {
 void NativeDevice::EndQuery() { context_->End(query_.Get()); }
 
 bool NativeDevice::Query() {
+  constexpr int SPIN_ATTEMPTS = 100;
+  constexpr int SLEEP_INTERVAL_MS = 1;
+  constexpr int MAX_QUERY_ATTEMPTS =
+      SPIN_ATTEMPTS + DECODE_TIMEOUT_MS / SLEEP_INTERVAL_MS;
   const auto start = util::now();
   int attempts = 0;
   // The timeout bounds polling, not a GetData call blocked inside the driver.
@@ -390,12 +394,13 @@ bool NativeDevice::Query() {
     }
     if (hr == S_OK && bResult == TRUE)
       return true;
-    if (util::elapsed_ms(start) >= DECODE_TIMEOUT_MS)
+    if (util::elapsed_ms(start) >= DECODE_TIMEOUT_MS ||
+        attempts >= MAX_QUERY_ATTEMPTS)
       break;
     attempts++;
     // Keep the existing short spin for queries that complete promptly.
-    if (attempts > 100)
-      Sleep(1);
+    if (attempts > SPIN_ATTEMPTS)
+      Sleep(SLEEP_INTERVAL_MS);
   }
   LOG_ERROR("GPU query timed out");
   return false;
