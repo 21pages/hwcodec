@@ -8,7 +8,7 @@
 #include <windows.h>
 
 namespace {
-int elapsed, calls, sleeps, sleep_ms, get_data_ms;
+int elapsed, calls, sleeps, sleep_ms, get_data_ms, reply_at;
 struct QueryClock {
   static std::chrono::milliseconds now() {
     return std::chrono::milliseconds(elapsed);
@@ -19,13 +19,13 @@ struct Reply {
   BOOL complete;
 };
 std::deque<Reply> replies;
-Reply pending;
+Reply pending, timed_reply;
 struct TestContext {
   HRESULT GetData(void *, void *data, UINT size, UINT flags) {
     assert(size == sizeof(BOOL) && flags == 0);
     ++calls;
     elapsed += get_data_ms;
-    Reply reply = pending;
+    Reply reply = reply_at >= 0 && elapsed >= reply_at ? timed_reply : pending;
     if (!replies.empty()) {
       reply = replies.front();
       replies.pop_front();
@@ -60,10 +60,13 @@ int main() {
   int failures = 0;
   auto check = [&](const char *name, std::initializer_list<Reply> sequence,
                    Reply fallback, int call_ms, bool expected,
-                   int expected_calls, int expected_ms, int expected_sleeps) {
+                   int expected_calls, int expected_ms, int expected_sleeps,
+                   int transition_ms = -1, Reply transition = {S_OK, TRUE}) {
     elapsed = calls = sleeps = 0;
     sleep_ms = 16;
     get_data_ms = call_ms;
+    reply_at = transition_ms;
+    timed_reply = transition;
     replies = sequence;
     pending = fallback;
     TestContext context;
@@ -85,11 +88,22 @@ int main() {
   check("device-removed", {}, {DXGI_ERROR_DEVICE_REMOVED, FALSE}, 0, false, 1,
         0, 0);
   check("hard-error", {}, {E_FAIL, FALSE}, 0, false, 1, 0, 0);
-  check("pending-timeout", {}, {S_FALSE, FALSE}, 0, false, 163, 1008, 63);
-  check("false-event-timeout", {}, {S_OK, FALSE}, 0, false, 163, 1008, 63);
-  check("pending-data-is-not-completion", {}, {S_FALSE, TRUE}, 0, false, 163,
+  check("pending-timeout", {}, {S_FALSE, FALSE}, 0, false, 164, 1008, 63);
+  check("false-event-timeout", {}, {S_OK, FALSE}, 0, false, 164, 1008, 63);
+  check("pending-data-is-not-completion", {}, {S_FALSE, TRUE}, 0, false, 164,
         1008, 63);
   check("slow-get-data-timeout", {}, {S_FALSE, FALSE}, 200, false, 5, 1000, 0);
+  check("completion-before-final-sleep", {}, {S_FALSE, FALSE}, 0, true, 163,
+        992, 62, 992);
+  check("completion-during-final-sleep", {}, {S_FALSE, FALSE}, 0, true, 164,
+        1008, 63, 999);
+  check("completion-at-deadline", {}, {S_FALSE, FALSE}, 0, true, 164, 1008,
+        63, 1000);
+  check("device-removed-during-final-sleep", {}, {S_FALSE, FALSE}, 0, false,
+        164, 1008, 63, 999, {DXGI_ERROR_DEVICE_REMOVED, FALSE});
+  check("completion-after-final-poll", {}, {S_FALSE, FALSE}, 0, false, 164,
+        1008, 63, 1009);
+  check("slow-get-data-completion", {}, {S_OK, TRUE}, 1100, true, 1, 1100, 0);
   std::printf("Failures: %d\n", failures);
   return failures ? 1 : 0;
 }

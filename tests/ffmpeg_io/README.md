@@ -1,7 +1,8 @@
 Run `./tests/ffmpeg_io/run.ps1` from an x64 MSVC developer PowerShell with
-`VCPKG_ROOT` set. The eight polling checks compile the exact production
+`VCPKG_ROOT` set. The fourteen polling checks compile the exact production
 `NativeDevice::Query()` body with scripted GetData results, a fake steady clock
-and a 16 ms Sleep(1). They cover completion, errors and elapsed-time bounds.
+and a 16 ms Sleep(1). They cover completion, errors, elapsed-time bounds, and
+completion during the final sleep that crosses the deadline.
 
 The three VRAM decoder checks use a real WARP NV12 texture, scripted FFmpeg I/O,
 and injected conversion/completion results. They check the public FFI return

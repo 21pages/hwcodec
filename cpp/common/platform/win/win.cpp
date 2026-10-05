@@ -386,7 +386,7 @@ bool NativeDevice::Query() {
       QueryClock::now() + std::chrono::milliseconds(DECODE_TIMEOUT_MS);
   int attempts = 0;
   // The deadline bounds polling, not a GetData call blocked inside the driver.
-  while (QueryClock::now() < deadline) {
+  while (true) {
     BOOL bResult = FALSE;
     HRESULT hr = context_->GetData(query_.Get(), &bResult, sizeof(BOOL), 0);
     if (FAILED(hr)) {
@@ -395,6 +395,8 @@ bool NativeDevice::Query() {
     }
     if (hr == S_OK && bResult == TRUE)
       return true;
+    if (QueryClock::now() >= deadline)
+      break;
     attempts++;
     // Keep the existing short spin for queries that complete promptly.
     if (attempts > 100)
