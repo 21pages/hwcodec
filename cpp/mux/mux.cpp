@@ -79,6 +79,21 @@ public:
       return false;
     }
 
+    if (strcmp(oc->oformat->name, "mp4") == 0) {
+      // Wait for codec parameters in the first frame, and cut fragments even
+      // when the encoder does not send another keyframe for a long time.
+      // Omit the trailer index: timed fragments can start on non-keyframes.
+      if ((ret = av_opt_set(oc->priv_data, "movflags",
+                            "delay_moov+frag_keyframe+skip_trailer", 0)) < 0 ||
+          (ret = av_opt_set_int(oc->priv_data, "frag_duration", 2000000, 0)) < 0) {
+        LOG_WARN(std::string("Failed to configure MP4 fragments, ret = ") +
+                  std::to_string(ret));
+        av_opt_set_defaults(oc->priv_data);
+      } else {
+        oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+      }
+    }
+
     ret = avformat_write_header(oc, NULL);
     if (ret < 0) {
       LOG_ERROR(std::string("avformat_write_header failed"));
