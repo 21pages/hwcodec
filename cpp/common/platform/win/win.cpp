@@ -1,6 +1,5 @@
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <list>
 #include <mutex>
@@ -12,15 +11,12 @@
 #include <dxgi.h>
 
 #include "win.h"
+#include "util.h"
 
 #define LOG_MODULE "WIN"
 #include "log.h"
 
 #define NUMVERTICES 6
-
-namespace {
-using QueryClock = std::chrono::steady_clock;
-}
 
 typedef struct _VERTEX {
   DirectX::XMFLOAT3 Pos;
@@ -382,10 +378,9 @@ int NativeDevice::next() {
 void NativeDevice::EndQuery() { context_->End(query_.Get()); }
 
 bool NativeDevice::Query() {
-  const auto deadline =
-      QueryClock::now() + std::chrono::milliseconds(DECODE_TIMEOUT_MS);
+  const auto start = util::now();
   int attempts = 0;
-  // The deadline bounds polling, not a GetData call blocked inside the driver.
+  // The timeout bounds polling, not a GetData call blocked inside the driver.
   while (true) {
     BOOL bResult = FALSE;
     HRESULT hr = context_->GetData(query_.Get(), &bResult, sizeof(BOOL), 0);
@@ -395,7 +390,7 @@ bool NativeDevice::Query() {
     }
     if (hr == S_OK && bResult == TRUE)
       return true;
-    if (QueryClock::now() >= deadline)
+    if (util::elapsed_ms(start) >= DECODE_TIMEOUT_MS)
       break;
     attempts++;
     // Keep the existing short spin for queries that complete promptly.

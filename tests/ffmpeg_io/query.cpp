@@ -14,6 +14,12 @@ struct QueryClock {
     return std::chrono::milliseconds(elapsed);
   }
 };
+namespace util {
+inline auto now() { return QueryClock::now(); }
+inline int64_t elapsed_ms(std::chrono::milliseconds start) {
+  return (now() - start).count();
+}
+} // namespace util
 struct Reply {
   HRESULT hr;
   BOOL complete;
