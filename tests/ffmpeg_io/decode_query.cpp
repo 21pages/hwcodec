@@ -119,7 +119,7 @@ int main() {
   };
   check("query-success", 0, 0, 3, {30, 31});
   check("query-failure", 1, -1, 1, {});
-  check("query-failure-after-output", 2, -1, 2, {30});
+  check("query-failure-after-output", 2, 0, 2, {30});
   std::printf("Failures: %d\n", failures);
   return failures ? 1 : 0;
 }

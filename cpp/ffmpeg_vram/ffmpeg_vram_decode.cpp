@@ -216,7 +216,6 @@ private:
       locked = true;
       if (!convert(frame_, callback, obj)) {
         LOG_ERROR(std::string("Failed to convert"));
-        decoded = false;
         goto _exit;
       }
       if (callback)
