@@ -272,8 +272,10 @@ public:
   int encode(const uint8_t *data, int length, const void *obj, uint64_t ms) {
     int ret;
 
-    if (!data)
+    if (!data) {
+      LOG_ERROR("Input data is NULL");
       return -1;
+    }
     if ((ret = av_frame_make_writable(frame_)) != 0) {
       LOG_ERROR(std::string("av_frame_make_writable failed, ret = ") + av_err2str(ret));
       return ret;
