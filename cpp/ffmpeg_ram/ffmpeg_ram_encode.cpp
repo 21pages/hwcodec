@@ -116,6 +116,10 @@ public:
   int gpu_ = 0;
   RamEncodeCallback callback_ = NULL;
   int offset_[AV_NUM_DATA_POINTERS] = {0};
+  bool frame_owned_ = true;
+  bool frame_initialized_ = false;
+  bool frame_prepared_ = false;
+  bool frame_ready_ = false;
 
   AVHWDeviceType hw_device_type_ = AV_HWDEVICE_TYPE_NONE;
   AVPixelFormat hw_pixfmt_ = AV_PIX_FMT_NONE;
@@ -270,6 +274,9 @@ public:
   int encode(const uint8_t *data, int length, const void *obj, uint64_t ms) {
     int ret;
 
+    frame_prepared_ = frame_ready_ = false;
+    frame_owned_ = frame_initialized_ = false;
+
     if ((ret = av_frame_make_writable(frame_)) != 0) {
       LOG_ERROR(std::string("av_frame_make_writable failed, ret = ") + av_err2str(ret));
       return ret;
@@ -288,6 +295,81 @@ public:
     }
 
     return do_encode(tmp_frame, obj, ms);
+  }
+
+  int prepare_frame(uint8_t **data, int *linesize) {
+    frame_prepared_ = frame_ready_ = false;
+    if (!data || !linesize ||
+        (pixfmt_ != AV_PIX_FMT_NV12 && pixfmt_ != AV_PIX_FMT_YUV420P))
+      return -1;
+
+    // A new image overwrites every pixel; do not copy the previous image when
+    // the codec still holds a reference, or after the legacy borrowed-input API.
+    if (!frame_owned_ || !av_frame_is_writable(frame_)) {
+      AVFrame *next = av_frame_alloc();
+      if (!next)
+        return AVERROR(ENOMEM);
+      next->format = pixfmt_;
+      next->width = width_;
+      next->height = height_;
+      int ret = av_frame_get_buffer(next, align_);
+      if (ret < 0) {
+        av_frame_free(&next);
+        return ret;
+      }
+      av_frame_free(&frame_);
+      frame_ = next;
+      frame_owned_ = true;
+      frame_initialized_ = false;
+    }
+    // Rust exposes initialized mutable slices, including each plane's padding.
+    // This is needed only for a newly allocated buffer, not for every frame.
+    if (!frame_initialized_) {
+      for (auto *buffer : frame_->buf) {
+        if (buffer)
+          memset(buffer->data, 0, buffer->size);
+      }
+      frame_initialized_ = true;
+    }
+    for (int i = 0; i < AV_NUM_DATA_POINTERS; ++i) {
+      data[i] = frame_->data[i];
+      linesize[i] = frame_->linesize[i];
+    }
+    frame_prepared_ = true;
+    return 0;
+  }
+
+  int encode_prepared(const void *obj, int64_t ms) {
+    if (!frame_prepared_)
+      return -1;
+    frame_prepared_ = false;
+    if (hw_device_type_ != AV_HWDEVICE_TYPE_NONE) {
+      // Uploads must not overwrite a surface retained by an earlier submission.
+      if (!av_frame_is_writable(hw_frame_)) {
+        AVFrame *next = av_frame_alloc();
+        if (!next)
+          return AVERROR(ENOMEM);
+        int ret = av_hwframe_get_buffer(c_->hw_frames_ctx, next, 0);
+        if (ret < 0) {
+          av_frame_free(&next);
+          return ret;
+        }
+        av_frame_free(&hw_frame_);
+        hw_frame_ = next;
+      }
+      int ret = av_hwframe_transfer_data(hw_frame_, frame_, 0);
+      if (ret < 0)
+        return ret;
+    }
+    frame_ready_ = true;
+    return reencode(obj, ms);
+  }
+
+  int reencode(const void *obj, int64_t ms) {
+    if (!frame_ready_)
+      return -1;
+    return do_encode(hw_device_type_ == AV_HWDEVICE_TYPE_NONE ? frame_ : hw_frame_,
+                     obj, ms);
   }
 
   void free_encoder() {
@@ -446,6 +528,36 @@ extern "C" int ffmpeg_ram_encode(FFmpegRamEncoder *encoder, const uint8_t *data,
     LOG_ERROR("ffmpeg_ram_encode: unknown exception");
   }
   return -1;
+}
+
+extern "C" int ffmpeg_ram_prepare_frame(FFmpegRamEncoder *encoder,
+                                        uint8_t **data, int *linesize) {
+  try {
+    return encoder ? encoder->prepare_frame(data, linesize) : -1;
+  } catch (...) {
+    LOG_ERROR("ffmpeg_ram_prepare_frame: exception");
+    return -1;
+  }
+}
+
+extern "C" int ffmpeg_ram_encode_prepared(FFmpegRamEncoder *encoder,
+                                          const void *obj, int64_t ms) {
+  try {
+    return encoder ? encoder->encode_prepared(obj, ms) : -1;
+  } catch (...) {
+    LOG_ERROR("ffmpeg_ram_encode_prepared: exception");
+    return -1;
+  }
+}
+
+extern "C" int ffmpeg_ram_reencode(FFmpegRamEncoder *encoder, const void *obj,
+                                   int64_t ms) {
+  try {
+    return encoder ? encoder->reencode(obj, ms) : -1;
+  } catch (...) {
+    LOG_ERROR("ffmpeg_ram_reencode: exception");
+    return -1;
+  }
 }
 
 extern "C" void ffmpeg_ram_free_encoder(FFmpegRamEncoder *encoder) {

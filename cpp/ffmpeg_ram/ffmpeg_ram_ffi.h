@@ -22,6 +22,12 @@ void *ffmpeg_ram_new_decoder(const char *name, int device_type,
                              int thread_count, RamDecodeCallback callback);
 int ffmpeg_ram_encode(void *encoder, const uint8_t *data, int length,
                       const void *obj, int64_t ms);
+// Both arrays have AV_NUM_DATA_POINTERS entries. Write all visible pixels using
+// these strides before encode_prepared; never retain the writable pointers across
+// submission or another prepare call. Preparing invalidates the previous repeat.
+int ffmpeg_ram_prepare_frame(void *encoder, uint8_t **data, int *linesize);
+int ffmpeg_ram_encode_prepared(void *encoder, const void *obj, int64_t ms);
+int ffmpeg_ram_reencode(void *encoder, const void *obj, int64_t ms);
 int ffmpeg_ram_decode(void *decoder, const uint8_t *data, int length,
                       const void *obj);
 void ffmpeg_ram_free_encoder(void *encoder);

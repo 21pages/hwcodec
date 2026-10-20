@@ -5,8 +5,9 @@ use crate::{
     },
     ffmpeg::{init_av_log, AVPixelFormat},
     ffmpeg_ram::{
-        ffmpeg_linesize_offset_length, ffmpeg_ram_encode, ffmpeg_ram_free_encoder,
-        ffmpeg_ram_new_encoder, ffmpeg_ram_set_bitrate, CodecInfo, AV_NUM_DATA_POINTERS,
+        ffmpeg_linesize_offset_length, ffmpeg_ram_encode, ffmpeg_ram_encode_prepared,
+        ffmpeg_ram_free_encoder, ffmpeg_ram_new_encoder, ffmpeg_ram_prepare_frame,
+        ffmpeg_ram_reencode, ffmpeg_ram_set_bitrate, CodecInfo, AV_NUM_DATA_POINTERS,
     },
 };
 use log::trace;
@@ -57,12 +58,62 @@ pub struct Encoder {
     pub linesize: Vec<i32>,
     pub offset: Vec<i32>,
     pub length: i32,
+    input_format: (usize, usize, AVPixelFormat),
+}
+
+/// An exclusive writable view of encoder-owned pixels. Acquire a new view for
+/// each image: its plane addresses and strides can change between submissions.
+/// Dropping the view without encoding invalidates static-frame re-encoding.
+pub struct WritableFrame<'a> {
+    encoder: &'a mut Encoder,
+    data: [*mut u8; AV_NUM_DATA_POINTERS as usize],
+    linesize: [i32; AV_NUM_DATA_POINTERS as usize],
+    lengths: [usize; 3],
+}
+
+impl<'a> WritableFrame<'a> {
+    pub fn width(&self) -> usize {
+        self.encoder.input_format.0
+    }
+
+    pub fn height(&self) -> usize {
+        self.encoder.input_format.1
+    }
+
+    pub fn pixfmt(&self) -> AVPixelFormat {
+        self.encoder.input_format.2
+    }
+
+    pub fn linesize(&self) -> &[i32] {
+        &self.linesize
+    }
+
+    pub fn planes_mut(&mut self) -> [&mut [u8]; 3] {
+        // prepare_frame initializes the allocation; FFmpeg owns disjoint planes
+        // of these lengths until this exclusive encoder borrow ends.
+        unsafe {
+            [
+                slice::from_raw_parts_mut(self.data[0], self.lengths[0]),
+                slice::from_raw_parts_mut(self.data[1], self.lengths[1]),
+                if self.lengths[2] == 0 {
+                    &mut []
+                } else {
+                    slice::from_raw_parts_mut(self.data[2], self.lengths[2])
+                },
+            ]
+        }
+    }
+
+    /// Submit the filled frame, ending its writable borrow.
+    pub fn encode(self, ms: i64) -> Result<&'a mut Vec<EncodeFrame>, i32> {
+        self.encoder.encode_prepared(ms)
+    }
 }
 
 impl Encoder {
     pub fn new(ctx: EncodeContext) -> Result<Self, ()> {
         init_av_log();
-        if ctx.width % 2 == 1 || ctx.height % 2 == 1 {
+        if ctx.width <= 0 || ctx.height <= 0 || ctx.width % 2 == 1 || ctx.height % 2 == 1 {
             return Err(());
         }
         unsafe {
@@ -105,6 +156,7 @@ impl Encoder {
             Ok(Encoder {
                 codec,
                 frames: Box::into_raw(Box::new(Vec::<EncodeFrame>::new())),
+                input_format: (ctx.width as usize, ctx.height as usize, ctx.pixfmt),
                 ctx,
                 linesize,
                 offset,
@@ -113,6 +165,8 @@ impl Encoder {
         }
     }
 
+    /// Legacy borrowed-input API. Prefer `prepare_frame()` when producing new
+    /// pixels so retained codec references own the allocation being submitted.
     pub fn encode(&mut self, data: &[u8], ms: i64) -> Result<&mut Vec<EncodeFrame>, i32> {
         unsafe {
             (&mut *self.frames).clear();
@@ -125,6 +179,65 @@ impl Encoder {
             );
             if result != 0 {
                 return Err(result);
+            }
+            Ok(&mut *self.frames)
+        }
+    }
+
+    /// Acquire initialized, encoder-owned planes for a new image. Fill every
+    /// visible pixel: previous contents are not preserved when a buffer is replaced.
+    pub fn prepare_frame(&mut self) -> Result<WritableFrame<'_>, i32> {
+        let mut data = [std::ptr::null_mut(); AV_NUM_DATA_POINTERS as usize];
+        let mut linesize = [0; AV_NUM_DATA_POINTERS as usize];
+        let ret = unsafe {
+            ffmpeg_ram_prepare_frame(self.codec, data.as_mut_ptr(), linesize.as_mut_ptr())
+        };
+        if ret != 0 {
+            return Err(ret);
+        }
+        let planes = if self.input_format.2 == AVPixelFormat::AV_PIX_FMT_NV12 {
+            2
+        } else {
+            3
+        };
+        let mut lengths = [0; 3];
+        for i in 0..planes {
+            if data[i].is_null() || linesize[i] <= 0 {
+                return Err(-1);
+            }
+            let rows = self.input_format.1 / if i == 0 { 1 } else { 2 };
+            lengths[i] = (linesize[i] as usize)
+                .checked_mul(rows)
+                .filter(|&len| len <= isize::MAX as usize)
+                .ok_or(-1)?;
+        }
+        Ok(WritableFrame {
+            encoder: self,
+            data,
+            linesize,
+            lengths,
+        })
+    }
+
+    fn encode_prepared(&mut self, ms: i64) -> Result<&mut Vec<EncodeFrame>, i32> {
+        unsafe {
+            (&mut *self.frames).clear();
+            let ret = ffmpeg_ram_encode_prepared(self.codec, self.frames.cast(), ms);
+            if ret != 0 {
+                return Err(ret);
+            }
+            Ok(&mut *self.frames)
+        }
+    }
+
+    /// Re-encode the last submitted image without conversion or another upload.
+    /// Fails before the first submission or after an unsubmitted writable view.
+    pub fn reencode(&mut self, ms: i64) -> Result<&mut Vec<EncodeFrame>, i32> {
+        unsafe {
+            (&mut *self.frames).clear();
+            let ret = ffmpeg_ram_reencode(self.codec, self.frames.cast(), ms);
+            if ret != 0 {
+                return Err(ret);
             }
             Ok(&mut *self.frames)
         }
@@ -320,7 +433,8 @@ impl Encoder {
                         let mut passed = false;
                         let mut last_err: Option<i32> = None;
 
-                        let max_attempts = if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+                        let max_attempts = if cfg!(all(target_os = "macos", target_arch = "x86_64"))
+                        {
                             3
                         } else {
                             1
@@ -336,7 +450,8 @@ impl Encoder {
                                         if frames[0].key == 1 && elapsed < TEST_TIMEOUT_MS as _ {
                                             debug!(
                                                 "Encoder {} test passed on attempt {}",
-                                                codec.name, attempt + 1
+                                                codec.name,
+                                                attempt + 1
                                             );
                                             res.push(codec.clone());
                                             passed = true;
