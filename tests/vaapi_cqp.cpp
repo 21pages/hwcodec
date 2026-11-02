@@ -24,6 +24,7 @@ static const AVOption options[] = {
     {"rc_mode", nullptr, offsetof(Options, rc_mode), AV_OPT_TYPE_INT,
      {.i64 = 0}, 0, 6, 0, "rc_mode"},
     {"CQP", nullptr, 0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, 0, "rc_mode"},
+    {"CBR", nullptr, 0, AV_OPT_TYPE_CONST, {.i64 = 2}, 0, 0, 0, "rc_mode"},
     // H.264/HEVC VAAPI accept 0..52 in AVOptions, then clamp CQP to 1..51.
     {"qp", nullptr, offsetof(Options, qp), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 52},
     {nullptr},
@@ -62,13 +63,15 @@ int main() {
     }
   }
 
-  // Explicit CQP configuration must not affect callers requesting other modes.
-  for (int rc : {RC_CBR, RC_VBR}) {
-    av_opt_set_defaults(&priv);
-    assert(util_encode::set_rate_control(&ctx, "h264_vaapi", rc, 16));
-    assert(priv.rc_mode == 0);
-    assert(priv.qp == 0);
-  }
+  av_opt_set_defaults(&priv);
+  assert(util_encode::set_rate_control(&ctx, "h264_vaapi", RC_CBR, 16));
+  assert(priv.rc_mode == 2);
+  assert(priv.qp == 0);
+
+  av_opt_set_defaults(&priv);
+  assert(util_encode::set_rate_control(&ctx, "h264_vaapi", RC_VBR, 16));
+  assert(priv.rc_mode == 0);
+  assert(priv.qp == 0);
 
   // Missing options must be reported as failures, not as successful CQP setup.
   AVOption mode_only[] = {options[0], options[1], {nullptr}};

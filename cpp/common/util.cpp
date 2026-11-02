@@ -214,7 +214,7 @@ bool set_rate_control(AVCodecContext *c, const std::string &name, int rc,
       {"mediacodec",
        "bitrate_mode",
        {{RC_CBR, "cbr"}, {RC_VBR, "vbr"}, {RC_CQ, "cq"}}},
-      {"vaapi", "rc_mode", {{RC_CQ, "CQP"}}},
+      {"vaapi", "rc_mode", {{RC_CBR, "CBR"}, {RC_CQ, "CQP"}}},
       // {"videotoolbox", "constant_bit_rate", {{RC_CBR, "1"}}},
     };
 
