@@ -253,13 +253,12 @@ impl Encoder {
                     priority: Priority::Good as _,
                     ..Default::default()
                 });
-                // remove because poor quality on one of my computer
-                // codecs.push(CodecInfo {
-                //     name: "hevc_vaapi".to_owned(),
-                //     format: H265,
-                //     priority: Priority::Good as _,
-                //     ..Default::default()
-                // });
+                codecs.push(CodecInfo {
+                    name: "hevc_vaapi".to_owned(),
+                    format: H265,
+                    priority: Priority::Good as _,
+                    ..Default::default()
+                });
             }
         }
 

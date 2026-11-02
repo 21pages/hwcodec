@@ -210,10 +210,15 @@ mod tests {
             .is_empty());
 
         codec.name = "h264_vaapi".into();
-        for rc in [RC_CBR, RC_CQ] {
+        for (rc, name, legacy_name) in [(RC_CBR, "CBR", "RC_CBR"), (RC_CQ, "CQP", "RC_CQ")] {
             codec.rc = vec![rc];
-            let value = serde_json::to_value(&codec).unwrap();
-            assert_eq!(value["rc"], serde_json::json!([rc]));
+            let mut value = serde_json::to_value(&codec).unwrap();
+            assert_eq!(value["rc"], serde_json::json!([name]));
+            assert_eq!(
+                serde_json::from_value::<CodecInfo>(value.clone()).unwrap(),
+                codec
+            );
+            value["rc"] = serde_json::json!([legacy_name]);
             assert_eq!(serde_json::from_value::<CodecInfo>(value).unwrap(), codec);
         }
     }

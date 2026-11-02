@@ -5,6 +5,33 @@
 use serde_derive::{Deserialize, Serialize};
 include!(concat!(env!("OUT_DIR"), "/common_ffi.rs"));
 
+impl serde::Serialize for RateControl {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::RC_DEFAULT => "DEFAULT",
+            Self::RC_CBR => "CBR",
+            Self::RC_VBR => "VBR",
+            Self::RC_CQ => "CQP",
+        })
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RateControl {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        match value.as_str() {
+            "DEFAULT" | "RC_DEFAULT" => Ok(Self::RC_DEFAULT),
+            "CBR" | "RC_CBR" => Ok(Self::RC_CBR),
+            "VBR" | "RC_VBR" => Ok(Self::RC_VBR),
+            "CQP" | "RC_CQ" => Ok(Self::RC_CQ),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["DEFAULT", "CBR", "VBR", "CQP"],
+            )),
+        }
+    }
+}
+
 pub(crate) const DATA_H264_720P: &[u8] = include_bytes!("res/720p.h264");
 pub(crate) const DATA_H265_720P: &[u8] = include_bytes!("res/720p.h265");
 

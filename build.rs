@@ -80,7 +80,7 @@ fn build_common(builder: &mut Build) {
 struct CommonCallbacks;
 impl bindgen::callbacks::ParseCallbacks for CommonCallbacks {
     fn add_derives(&self, name: &str) -> Vec<String> {
-        let names = vec!["DataFormat", "SurfaceFormat", "API", "RateControl"];
+        let names = vec!["DataFormat", "SurfaceFormat", "API"];
         if names.contains(&name) {
             vec!["Serialize", "Deserialize"]
                 .drain(..)
