@@ -2,10 +2,15 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-use crate::common::DataFormat::{self, *};
-use crate::ffmpeg::{
-    AVHWDeviceType::{self, *},
-    AVPixelFormat,
+use crate::{
+    common::{
+        DataFormat::{self, *},
+        RateControl,
+    },
+    ffmpeg::{
+        AVHWDeviceType::{self, *},
+        AVPixelFormat,
+    },
 };
 use serde_derive::{Deserialize, Serialize};
 use std::ffi::c_int;
@@ -31,6 +36,8 @@ pub struct CodecInfo {
     pub format: DataFormat,
     pub priority: i32,
     pub hwdevice: AVHWDeviceType,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rc: Vec<RateControl>,
 }
 
 impl Default for CodecInfo {
@@ -41,6 +48,7 @@ impl Default for CodecInfo {
             format: DataFormat::H264,
             priority: Default::default(),
             hwdevice: AVHWDeviceType::AV_HWDEVICE_TYPE_NONE,
+            rc: Vec::new(),
         }
     }
 }
@@ -114,6 +122,7 @@ impl CodecInfo {
                 format: H264,
                 hwdevice: AV_HWDEVICE_TYPE_NONE,
                 priority: Priority::Soft as _,
+                ..Default::default()
             }),
             h265: Some(CodecInfo {
                 name: "hevc".to_owned(),
@@ -121,6 +130,7 @@ impl CodecInfo {
                 format: H265,
                 hwdevice: AV_HWDEVICE_TYPE_NONE,
                 priority: Priority::Soft as _,
+                ..Default::default()
             }),
             vp8: None,
             vp9: None,
@@ -182,4 +192,34 @@ pub fn ffmpeg_linesize_offset_length(
     }
 
     Err(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::RateControl::{RC_CBR, RC_CQ};
+
+    #[test]
+    fn codec_info_rate_control_serialization() {
+        let mut codec = CodecInfo::soft().h264.unwrap();
+        let legacy = serde_json::to_value(&codec).unwrap();
+        assert!(legacy.get("rc").is_none());
+        assert!(serde_json::from_value::<CodecInfo>(legacy)
+            .unwrap()
+            .rc
+            .is_empty());
+
+        codec.name = "h264_vaapi".into();
+        for (rc, name, legacy_name) in [(RC_CBR, "CBR", "RC_CBR"), (RC_CQ, "CQP", "RC_CQ")] {
+            codec.rc = vec![rc];
+            let mut value = serde_json::to_value(&codec).unwrap();
+            assert_eq!(value["rc"], serde_json::json!([name]));
+            assert_eq!(
+                serde_json::from_value::<CodecInfo>(value.clone()).unwrap(),
+                codec
+            );
+            value["rc"] = serde_json::json!([legacy_name]);
+            assert_eq!(serde_json::from_value::<CodecInfo>(value).unwrap(), codec);
+        }
+    }
 }

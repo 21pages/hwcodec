@@ -253,13 +253,12 @@ impl Encoder {
                     priority: Priority::Good as _,
                     ..Default::default()
                 });
-                // remove because poor quality on one of my computer
-                // codecs.push(CodecInfo {
-                //     name: "hevc_vaapi".to_owned(),
-                //     format: H265,
-                //     priority: Priority::Good as _,
-                //     ..Default::default()
-                // });
+                codecs.push(CodecInfo {
+                    name: "hevc_vaapi".to_owned(),
+                    format: H265,
+                    priority: Priority::Good as _,
+                    ..Default::default()
+                });
             }
         }
 
@@ -313,6 +312,15 @@ impl Encoder {
                     mc_name: codec.mc_name.clone(),
                     ..ctx
                 };
+
+                if codec.name.contains("vaapi") {
+                    if let Some(rc) = Self::probe_vaapi(&c, &yuv) {
+                        let mut codec = codec;
+                        codec.rc.push(rc);
+                        res.push(codec);
+                    }
+                    continue;
+                }
 
                 match Encoder::new(c) {
                     Ok(mut encoder) => {
@@ -391,6 +399,25 @@ impl Encoder {
         }
 
         res
+    }
+
+    fn probe_vaapi(ctx: &EncodeContext, yuv: &[u8]) -> Option<RateControl> {
+        for rc in [RateControl::RC_CBR, RateControl::RC_CQ] {
+            log::debug!("Testing encoder {} with {:?}", ctx.name, rc);
+            if let Ok(mut encoder) = Self::new(EncodeContext { rc, ..ctx.clone() }) {
+                let start = std::time::Instant::now();
+                if let Ok(frames) = encoder.encode(yuv, 0) {
+                    if frames.len() == 1
+                        && frames[0].key == 1
+                        && start.elapsed().as_millis() < TEST_TIMEOUT_MS as _
+                    {
+                        return Some(rc);
+                    }
+                }
+            }
+            log::debug!("Encoder {} test failed with {:?}", ctx.name, rc);
+        }
+        None
     }
 
     fn dummy_yuv(ctx: EncodeContext) -> Result<Vec<u8>, ()> {
